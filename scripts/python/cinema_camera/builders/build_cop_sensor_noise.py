@@ -14,11 +14,11 @@ import os
 
 # VEX: Dual-gain sensor noise model
 _DUAL_GAIN_NOISE_VEX = '''
-float ei = ch("../exposure_index");
-float native = ch("../native_iso");
-float photon_amt = ch("../photon_noise_amount");
-float read_amt = ch("../read_noise_amount");
-float temporal = ch("../temporal_coherence");
+float ei = ch("../../exposure_index");
+float native = ch("../../native_iso");
+float photon_amt = ch("../../photon_noise_amount");
+float read_amt = ch("../../read_noise_amount");
+float temporal = ch("../../temporal_coherence");
 
 // Gain ratio: how far above native ISO
 float gain = ei / max(native, 1.0);
@@ -72,35 +72,36 @@ def build_cop_sensor_noise_hda(
 
     # ── Create temporary COP network ─────────────────────
     obj = hou.node("/obj")
-    temp_geo = obj.createNode("geo", "__cinema_noise_build")
-    temp_cop = temp_geo.createNode("cop2net", "__noise_net")
+    temp_cop = obj.createNode("cop2net", "__cinema_noise_build")
+
+    # Build inside a subnet
+    sub = temp_cop.createNode("subnet", "__noise_sub")
 
     # Input image
-    in_image = temp_cop.createNode("null", "IN_image")
+    in_image = sub.createNode("null", "IN_image")
 
-    # Dual-gain noise generator
-    dual_gain_noise = temp_cop.createNode("vopcop2gen", "dual_gain_noise")
-    dual_gain_noise.parm("vexsrc").set(1)  # Inline VEX
-    dual_gain_noise.parm("snippet").set(_DUAL_GAIN_NOISE_VEX)
+    # Dual-gain noise filter (vopcop2filter + snippet VOP)
+    dual_gain_noise = sub.createNode("vopcop2filter", "dual_gain_noise")
+    noise_snippet = dual_gain_noise.createNode("snippet", "noise_vex")
+    noise_snippet.parm("code").set(_DUAL_GAIN_NOISE_VEX)
     dual_gain_noise.setInput(0, in_image)
 
     # Enable/disable switch
-    enable_switch = temp_cop.createNode("switch", "enable_switch")
+    enable_switch = sub.createNode("switch", "enable_switch")
     enable_switch.parm("index").setExpression('ch("../enable")')
     enable_switch.setInput(0, in_image)         # Off: passthrough
     enable_switch.setInput(1, dual_gain_noise)  # On: noise applied
 
     # Output
-    out = temp_cop.createNode("null", "OUT_noise")
+    out = sub.createNode("null", "OUT_noise")
     out.setInput(0, enable_switch)
-    out.setRenderFlag(True)
     out.setDisplayFlag(True)
 
-    temp_cop.layoutChildren()
+    sub.layoutChildren()
 
-    # ── Convert to HDA ───────────────────────────────────
+    # ── Convert subnet to HDA ──────────────────────────────
     hda_path = os.path.join(save_dir, hda_name)
-    hda_node = temp_cop.createDigitalAsset(
+    hda_node = sub.createDigitalAsset(
         name="cinema::cop_sensor_noise",
         hda_file_name=hda_path,
         description="Cinema Sensor Noise",
@@ -168,6 +169,6 @@ def build_cop_sensor_noise_hda(
     # ── Save and clean up ────────────────────────────────
     hda_def.save(hda_path)
     hda_node.destroy()
-    temp_geo.destroy()
+    temp_cop.destroy()
 
     return hda_path

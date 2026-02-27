@@ -52,69 +52,74 @@ def build_chops_biomechanics_hda(
     obj = hou.node("/obj")
     temp_net = obj.createNode("chopnet", "__cinema_chops_build")
 
+    # Build inside a subnet (subnet can be converted to HDA)
+    sub = temp_net.createNode("subnet", "__biomech_sub")
+
     # Raw camera input (user wires Pan/Tilt/Roll here)
-    raw_input = temp_net.createNode("fetch", "raw_camera_input")
+    raw_input = sub.createNode("fetch", "raw_camera_input")
 
     # Solver parameters (constant node holding derived values)
-    solver_params = temp_net.createNode("constant", "solver_params")
+    solver_params = sub.createNode("constant", "solver_params")
     solver_params.parm("name0").set("spring_k")
-    solver_params.parm("value0").setExpression('ch("../spring_constant")')
+    solver_params.parm("value0").setExpression('ch("../../spring_constant")')
     solver_params.parm("name1").set("damping")
-    solver_params.parm("value1").setExpression('ch("../damping_ratio")')
+    solver_params.parm("value1").setExpression('ch("../../damping_ratio")')
     solver_params.parm("name2").set("lag_frames")
-    solver_params.parm("value2").setExpression('ch("../lag_frames")')
+    solver_params.parm("value2").setExpression('ch("../../lag_frames")')
     solver_params.parm("name3").set("shake_amp")
-    solver_params.parm("value3").setExpression('ch("../shake_amplitude_deg")')
+    solver_params.parm("value3").setExpression('ch("../../shake_amplitude_deg")')
     solver_params.parm("name4").set("shake_freq")
-    solver_params.parm("value4").setExpression('ch("../shake_frequency_hz")')
+    solver_params.parm("value4").setExpression('ch("../../shake_frequency_hz")')
 
     # Spring solver -- applies inertia dynamics
-    inertia_solver = temp_net.createNode("spring", "inertia_solver")
-    inertia_solver.parm("springk").setExpression('ch("../spring_constant")')
-    inertia_solver.parm("damping").setExpression('ch("../damping_ratio")')
+    inertia_solver = sub.createNode("spring", "inertia_solver")
+    inertia_solver.parm("springk").setExpression('ch("../../spring_constant")')
+    inertia_solver.parm("dampingk").setExpression('ch("../../damping_ratio")')
     inertia_solver.setInput(0, raw_input)
 
     # Operator delay
-    operator_delay = temp_net.createNode("lag", "operator_delay")
-    operator_delay.parm("lag").setExpression('ch("../lag_frames")')
+    operator_delay = sub.createNode("lag", "operator_delay")
+    operator_delay.parm("lag1").setExpression('ch("../../lag_frames")')
     operator_delay.setInput(0, inertia_solver)
 
     # Handheld shake (sparse noise)
-    handheld_shake = temp_net.createNode("noise", "handheld_shake")
-    handheld_shake.parm("amp").setExpression('ch("../shake_amplitude_deg")')
-    handheld_shake.parm("freq").setExpression('ch("../shake_frequency_hz")')
-    handheld_shake.parm("type").set(4)  # Sparse noise
+    handheld_shake = sub.createNode("noise", "handheld_shake")
+    handheld_shake.parm("amp").setExpression('ch("../../shake_amplitude_deg")')
+    # Period = 1/frequency (seconds per cycle)
+    handheld_shake.parm("period").setExpression('1.0 / ch("../../shake_frequency_hz")')
+    handheld_shake.parm("function").set(4)  # Sparse noise
 
     # Combine: spring+lag output + optional shake
-    combine_motion = temp_net.createNode("math", "combine_motion")
+    combine_motion = sub.createNode("math", "combine_motion")
     combine_motion.parm("chopop").set(1)  # Add
     combine_motion.setInput(0, operator_delay)
     combine_motion.setInput(1, handheld_shake)
 
     # Switch for handheld enable/disable
-    handheld_enable = temp_net.createNode("switch", "handheld_enable")
-    handheld_enable.parm("index").setExpression('ch("../enable_handheld")')
+    handheld_enable = sub.createNode("switch", "handheld_enable")
+    handheld_enable.parm("index").setExpression('ch("../../enable_handheld")')
     handheld_enable.setInput(0, operator_delay)   # Off: spring+lag only
     handheld_enable.setInput(1, combine_motion)   # On: spring+lag+shake
 
     # Output
-    out = temp_net.createNode("null", "OUT_biomechanics")
+    out = sub.createNode("null", "OUT_biomechanics")
     out.setInput(0, handheld_enable)
-    out.setRenderFlag(True)
     out.setDisplayFlag(True)
+    out.setExportFlag(True)
 
     # Layout
-    temp_net.layoutChildren()
+    sub.layoutChildren()
 
-    # ── Convert to HDA ───────────────────────────────────
+    # ── Convert subnet to HDA ──────────────────────────────
     hda_path = os.path.join(save_dir, hda_name)
-    hda_node = temp_net.createDigitalAsset(
+    hda_node = sub.createDigitalAsset(
         name="cinema::chops_biomechanics",
         hda_file_name=hda_path,
         description="Cinema Biomechanics",
         min_num_inputs=1,
         max_num_inputs=1,
         version="1.0",
+        ignore_external_references=True,
     )
     hda_def = hda_node.type().definition()
 
@@ -189,7 +194,7 @@ def build_chops_biomechanics_hda(
         "Operator biomechanics: physically-based camera inertia"
     )
     hda_def.setExtraInfo(
-        "Cinema Camera Rig v4.0 — Pillar C: Biomechanics\n"
+        "Cinema Camera Rig v4.0 -- Pillar C: Biomechanics\n"
         "Spring+lag solver driven by physical rig weight.\n"
         "Auto-derives spring_k, damping, lag from combined_weight_kg."
     )
@@ -197,5 +202,6 @@ def build_chops_biomechanics_hda(
     # ── Save and clean up ────────────────────────────────
     hda_def.save(hda_path)
     hda_node.destroy()
+    temp_net.destroy()
 
     return hda_path

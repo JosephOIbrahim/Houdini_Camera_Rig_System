@@ -16,8 +16,8 @@ import os
 _STMAP_VEX = '''
 #include <libcinema_optics.h>
 
-float res_x = ch("../resolution_x");
-float res_y = ch("../resolution_y");
+float res_x = ch("../../resolution_x");
+float res_y = ch("../../resolution_y");
 
 // Normalized UV (0-1)
 float u = (float(X) + 0.5) / res_x;
@@ -29,18 +29,18 @@ float cy = v * 2.0 - 1.0;
 
 // Build distortion coefficients from parameters
 CO_DistortionCoeffs coeffs;
-coeffs.k1 = ch("../dist_k1");
-coeffs.k2 = ch("../dist_k2");
-coeffs.k3 = ch("../dist_k3");
-coeffs.p1 = ch("../dist_p1");
-coeffs.p2 = ch("../dist_p2");
-coeffs.squeeze_uniformity = ch("../dist_sq_uniformity");
+coeffs.k1 = ch("../../dist_k1");
+coeffs.k2 = ch("../../dist_k2");
+coeffs.k3 = ch("../../dist_k3");
+coeffs.p1 = ch("../../dist_p1");
+coeffs.p2 = ch("../../dist_p2");
+coeffs.squeeze_uniformity = ch("../../dist_sq_uniformity");
 
 vector2 uv_in = set(cx, cy);
 vector2 uv_out;
 
-int mode = chi("../mode");
-float squeeze = ch("../effective_squeeze");
+int mode = chi("../../mode");
+float squeeze = ch("../../effective_squeeze");
 
 if (mode == 0) {
     // Undistort: map distorted coords to clean coords
@@ -78,28 +78,29 @@ def build_cop_stmap_aov_hda(
 
     # ── Create temporary COP network ─────────────────────
     obj = hou.node("/obj")
-    temp_geo = obj.createNode("geo", "__cinema_stmap_build")
-    temp_cop = temp_geo.createNode("cop2net", "__stmap_net")
+    temp_cop = obj.createNode("cop2net", "__cinema_stmap_build")
+
+    # Build inside a subnet
+    sub = temp_cop.createNode("subnet", "__stmap_sub")
 
     # Optional resolution reference input
-    in_ref = temp_cop.createNode("null", "IN_resolution_ref")
+    in_ref = sub.createNode("null", "IN_resolution_ref")
 
-    # STMap generator
-    stmap_gen = temp_cop.createNode("vopcop2gen", "stmap_generator")
-    stmap_gen.parm("vexsrc").set(1)  # Inline VEX
-    stmap_gen.parm("snippet").set(_STMAP_VEX)
+    # STMap generator (vopcop2gen + snippet VOP)
+    stmap_gen = sub.createNode("vopcop2gen", "stmap_generator")
+    stmap_snippet = stmap_gen.createNode("snippet", "stmap_vex")
+    stmap_snippet.parm("code").set(_STMAP_VEX)
 
     # Output
-    out = temp_cop.createNode("null", "OUT_stmap")
+    out = sub.createNode("null", "OUT_stmap")
     out.setInput(0, stmap_gen)
-    out.setRenderFlag(True)
     out.setDisplayFlag(True)
 
-    temp_cop.layoutChildren()
+    sub.layoutChildren()
 
-    # ── Convert to HDA ───────────────────────────────────
+    # ── Convert subnet to HDA ──────────────────────────────
     hda_path = os.path.join(save_dir, hda_name)
-    hda_node = temp_cop.createDigitalAsset(
+    hda_node = sub.createDigitalAsset(
         name="cinema::cop_stmap_aov",
         hda_file_name=hda_path,
         description="Cinema STMap AOV",
@@ -183,6 +184,6 @@ def build_cop_stmap_aov_hda(
     # ── Save and clean up ────────────────────────────────
     hda_def.save(hda_path)
     hda_node.destroy()
-    temp_geo.destroy()
+    temp_cop.destroy()
 
     return hda_path

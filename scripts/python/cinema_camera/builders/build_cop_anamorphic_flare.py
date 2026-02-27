@@ -15,7 +15,7 @@ import os
 # VEX: Threshold bright pixels for flare source
 _THRESHOLD_VEX = '''
 float lum = luminance(set(R, G, B));
-float threshold = ch("../threshold");
+float threshold = ch("../../threshold");
 float mask = smooth(threshold - 0.1, threshold + 0.1, lum);
 R *= mask;
 G *= mask;
@@ -24,9 +24,9 @@ B *= mask;
 
 # VEX: Generate iris kernel for FFT convolution
 _IRIS_KERNEL_VEX = '''
-int blades = chi("../iris_blades");
-float squeeze = ch("../squeeze_ratio");
-float intensity = ch("../intensity");
+int blades = chi("../../iris_blades");
+float squeeze = ch("../../squeeze_ratio");
+float intensity = ch("../../intensity");
 
 float cx = (float(X) / float(XRES)) * 2.0 - 1.0;
 float cy = (float(Y) / float(YRES)) * 2.0 - 1.0;
@@ -66,59 +66,57 @@ def build_cop_anamorphic_flare_hda(
 
     # ── Create temporary COP network ─────────────────────
     obj = hou.node("/obj")
-    temp_geo = obj.createNode("geo", "__cinema_flare_build")
-    temp_cop = temp_geo.createNode("cop2net", "__flare_net")
+    temp_cop = obj.createNode("cop2net", "__cinema_flare_build")
+
+    # Build inside a subnet (subnet can be converted to HDA)
+    sub = temp_cop.createNode("subnet", "__flare_sub")
 
     # Input image
-    in_image = temp_cop.createNode("null", "IN_image")
-    in_image.setInput(0, None)
+    in_image = sub.createNode("null", "IN_image")
 
-    # Bright pixel extraction
-    bright_extract = temp_cop.createNode("vopcop2gen", "bright_extract")
-    bright_extract.parm("vexsrc").set(1)  # Inline VEX
-    bright_extract.parm("vex_cwdpath").set("")
-    bright_extract.parm("snippet").set(_THRESHOLD_VEX)
+    # Bright pixel extraction (vopcop2filter + snippet VOP)
+    bright_extract = sub.createNode("vopcop2filter", "bright_extract")
+    bright_snippet = bright_extract.createNode("snippet", "threshold_vex")
+    bright_snippet.parm("code").set(_THRESHOLD_VEX)
     bright_extract.setInput(0, in_image)
 
-    # Iris kernel generation
-    iris_kernel = temp_cop.createNode("vopcop2gen", "iris_kernel")
-    iris_kernel.parm("vexsrc").set(1)
-    iris_kernel.parm("snippet").set(_IRIS_KERNEL_VEX)
+    # Iris kernel generation (vopcop2gen + snippet VOP)
+    iris_kernel = sub.createNode("vopcop2gen", "iris_kernel")
+    iris_snippet = iris_kernel.createNode("snippet", "iris_vex")
+    iris_snippet.parm("code").set(_IRIS_KERNEL_VEX)
 
     # FFT convolution
-    fft_convolve = temp_cop.createNode("convolve", "fft_convolve")
+    fft_convolve = sub.createNode("convolve", "fft_convolve")
     fft_convolve.setInput(0, bright_extract)
     fft_convolve.setInput(1, iris_kernel)
 
     # Anamorphic horizontal streak
-    anamorphic_streak = temp_cop.createNode("blur", "anamorphic_streak")
-    anamorphic_streak.parm("sizex").set(50)
-    anamorphic_streak.parm("sizey").set(2)
+    anamorphic_streak = sub.createNode("streak", "anamorphic_streak")
+    anamorphic_streak.parm("size").set(50)
+    anamorphic_streak.parm("rot").set(0)  # Horizontal
     anamorphic_streak.setInput(0, fft_convolve)
 
-    # Composite flare over original
-    flare_over = temp_cop.createNode("composite", "flare_over")
-    flare_over.parm("operation").set(0)  # Add
+    # Composite flare over original (additive blend)
+    flare_over = sub.createNode("add", "flare_add")
     flare_over.setInput(0, in_image)
     flare_over.setInput(1, anamorphic_streak)
 
     # Enable/disable switch
-    enable_switch = temp_cop.createNode("switch", "enable_switch")
+    enable_switch = sub.createNode("switch", "enable_switch")
     enable_switch.parm("index").setExpression('ch("../enable")')
     enable_switch.setInput(0, in_image)      # Off: passthrough
     enable_switch.setInput(1, flare_over)    # On: flare applied
 
     # Output
-    out = temp_cop.createNode("null", "OUT_flare")
+    out = sub.createNode("null", "OUT_flare")
     out.setInput(0, enable_switch)
-    out.setRenderFlag(True)
     out.setDisplayFlag(True)
 
-    temp_cop.layoutChildren()
+    sub.layoutChildren()
 
-    # ── Convert to HDA ───────────────────────────────────
+    # ── Convert subnet to HDA ──────────────────────────────
     hda_path = os.path.join(save_dir, hda_name)
-    hda_node = temp_cop.createDigitalAsset(
+    hda_node = sub.createDigitalAsset(
         name="cinema::cop_anamorphic_flare",
         hda_file_name=hda_path,
         description="Cinema Anamorphic Flare",
@@ -189,6 +187,6 @@ def build_cop_anamorphic_flare_hda(
     # ── Save and clean up ────────────────────────────────
     hda_def.save(hda_path)
     hda_node.destroy()
-    temp_geo.destroy()
+    temp_cop.destroy()
 
     return hda_path
