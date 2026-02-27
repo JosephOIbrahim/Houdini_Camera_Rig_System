@@ -1,0 +1,98 @@
+// ═══════════════════════════════════════════════════════════
+// KARMA CVEX LENS SHADER — Cinema Camera Rig v4.0
+//
+// Warps render rays BEFORE scene sampling.
+// This preserves DOF, motion blur, and refraction fidelity.
+//
+// Compiles to: cvex_cinema_lens.vex
+// Usage: Assign as lens shader on Karma render settings
+//
+// Parameters read from USD camera prim attributes at render time.
+// ═══════════════════════════════════════════════════════════
+
+#include <libcinema_optics.h>
+
+cvex cinema_lens_shader(
+    // ── Lens parameters (driven from USD attributes) ────
+    float focal_length_mm = 50.0;
+    float effective_squeeze = 2.0;         // cinema:rig:effectiveSqueeze
+    float entrance_pupil_offset_cm = 12.5; // cinema:rig:entrancePupilOffsetCm
+    float sensor_width_mm = 27.99;         // horizontalAperture
+    float sensor_height_mm = 19.22;        // verticalAperture
+
+    // Distortion coefficients (from cinema:lens:distortion:*)
+    float dist_k1 = 0.0;
+    float dist_k2 = 0.0;
+    float dist_k3 = 0.0;
+    float dist_p1 = 0.0;
+    float dist_p2 = 0.0;
+    float dist_sq_uniformity = 1.0;
+
+    // Enable/disable controls
+    int enable_distortion = 1;
+    int enable_squeeze = 1;
+    int enable_pupil_offset = 1;
+
+    // ── Standard CVEX lens inputs ───────────────────────
+    float x = 0.0;     // Screen-space X (-1 to 1)
+    float y = 0.0;     // Screen-space Y (-1 to 1)
+    float Time = 0.0;
+    float sx = 0.0;    // Sub-pixel jitter X
+    float sy = 0.0;    // Sub-pixel jitter Y
+
+    // ── Standard CVEX lens outputs ──────────────────────
+    export vector P = {0, 0, 0};    // Ray origin (camera space)
+    export vector I = {0, 0, 1};    // Ray direction (camera space)
+    export int valid = 1;           // 1 = valid ray, 0 = discard
+) {
+    // ── Apply sub-pixel jitter ──────────────────────────
+    float jx = x + sx;
+    float jy = y + sy;
+
+    // ── Apply optical distortion to screen coordinates ──
+    vector2 uv = set(jx, jy);
+
+    if (enable_distortion) {
+        CO_DistortionCoeffs coeffs;
+        coeffs.k1 = dist_k1;
+        coeffs.k2 = dist_k2;
+        coeffs.k3 = dist_k3;
+        coeffs.p1 = dist_p1;
+        coeffs.p2 = dist_p2;
+        coeffs.squeeze_uniformity = dist_sq_uniformity;
+
+        if (enable_squeeze && effective_squeeze > 1.01) {
+            // Dynamic anamorphic distortion with focus-dependent squeeze
+            uv = co_apply_anamorphic_distortion(uv, coeffs, effective_squeeze);
+        } else {
+            // Standard spherical distortion
+            uv = co_apply_distortion(uv, coeffs);
+        }
+    } else if (enable_squeeze && effective_squeeze > 1.01) {
+        // Squeeze only, no distortion
+        uv.x *= effective_squeeze;
+    }
+
+    // ── Convert screen UV to camera-space ray direction ─
+    // Map [-1,1] screen coords to sensor plane coordinates
+    float half_w = sensor_width_mm * 0.5;
+    float half_h = sensor_height_mm * 0.5;
+
+    float ray_x = uv.x * half_w;
+    float ray_y = uv.y * half_h;
+    float ray_z = focal_length_mm;
+
+    I = normalize(set(ray_x, ray_y, ray_z));
+
+    // ── Ray origin at entrance pupil ────────────────────
+    // Physical rays originate at the nodal point, not sensor plane
+    if (enable_pupil_offset) {
+        // Entrance pupil is FORWARD from sensor (positive Z in camera space)
+        // Convert cm to Houdini scene units (cm default in USD)
+        P = set(0, 0, entrance_pupil_offset_cm);
+    } else {
+        P = set(0, 0, 0);
+    }
+
+    valid = 1;
+}
