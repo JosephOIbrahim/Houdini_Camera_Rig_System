@@ -3,7 +3,10 @@
   "manufacturer": "Cooke",
   "series": "Anamorphic/i S35",
   "focal_length_mm": 300.0,
-  "t_stop_range": [3.5, 22.0],
+  "t_stop_range": [
+    3.5,
+    22.0
+  ],
   "iris_blades": 11,
   "close_focus_m": 1.83,
   "image_circle_mm": 31.1,
@@ -26,11 +29,26 @@
     "entrance_pupil_offset_mm": 320.0
   },
   "squeeze_breathing": [
-    { "focus_m": 1.83, "effective_squeeze": 1.90 },
-    { "focus_m": 3.0,  "effective_squeeze": 1.94 },
-    { "focus_m": 5.0,  "effective_squeeze": 1.97 },
-    { "focus_m": 15.0, "effective_squeeze": 1.99 },
-    { "focus_m": "infinity", "effective_squeeze": 2.0 }
+    {
+      "focus_m": 1.83,
+      "effective_squeeze": 1.9
+    },
+    {
+      "focus_m": 3.0,
+      "effective_squeeze": 1.94
+    },
+    {
+      "focus_m": 5.0,
+      "effective_squeeze": 1.97
+    },
+    {
+      "focus_m": 15.0,
+      "effective_squeeze": 1.99
+    },
+    {
+      "focus_m": "infinity",
+      "effective_squeeze": 2.0
+    }
   ],
   "distortion": {
     "k1": -0.008,
@@ -38,8 +56,25 @@
     "squeeze_uniformity": 0.96
   },
   "breathing": [
-    { "focus_m": 1.83, "fov_shift_pct": 1.8 },
-    { "focus_m": 5.0,  "fov_shift_pct": 0.5 },
-    { "focus_m": "infinity", "fov_shift_pct": 0.0 }
-  ]
+    {
+      "focus_m": 1.83,
+      "fov_shift_pct": 1.8
+    },
+    {
+      "focus_m": 5.0,
+      "fov_shift_pct": 0.5
+    },
+    {
+      "focus_m": "infinity",
+      "fov_shift_pct": 0.0
+    }
+  ],
+  "squeeze_breathing_fit": {
+    "type": "rational_2_1",
+    "coefficients": {},
+    "python_lambda": "lambda f: (0) / (1)",
+    "r_squared": -2910.303030303025,
+    "max_residual": 2.0,
+    "wolfram_query": "fit {{1.83, 1.9}, {3.0, 1.94}, {5.0, 1.97}, {15.0, 1.99}, {infinity, 2.0}} to (a0 + a1*f + a2*f^2) / (1 + b1*f)"
+  }
 }

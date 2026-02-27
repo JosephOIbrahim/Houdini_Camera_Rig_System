@@ -1,0 +1,62 @@
+[
+  {
+    "query": "solve exp(-pi * z / sqrt(1 - z^2)) = 0.15 for z where 0 < z < 1",
+    "source": "cache",
+    "result": "z = (2 log(2) - log(3) + log(5))/sqrt(\u03c0^2 + 4 log^2(2) + log^2(3) + log^2(5) - 4 log(2) log(3) + 4 log(2) log(5) - 2 log(3) log(5))"
+  },
+  {
+    "query": "damped harmonic oscillator with I=1125.0, k=748253.7628, c=30000.0000: settling time and overshoot",
+    "source": "cache",
+    "result": ""
+  },
+  {
+    "query": "solve exp(-pi * z / sqrt(1 - z^2)) = 0.1 for z where 0 < z < 1",
+    "source": "cache",
+    "result": "z = (log(2) + log(5))/sqrt(\u03c0^2 + log^2(2) + log^2(5) + 2 log(2) log(5))"
+  },
+  {
+    "query": "damped harmonic oscillator with I=2430.0, k=445257.5434, c=38880.0000: settling time and overshoot",
+    "source": "cache",
+    "result": ""
+  },
+  {
+    "query": "solve exp(-pi * z / sqrt(1 - z^2)) = 0.05 for z where 0 < z < 1",
+    "source": "cache",
+    "result": "z = (2 log(2) + log(5))/sqrt(\u03c0^2 + 4 log^2(2) + log^2(5) + 4 log(2) log(5))"
+  },
+  {
+    "query": "damped harmonic oscillator with I=4000.0, k=210039.9076, c=40000.0000: settling time and overshoot",
+    "source": "cache",
+    "result": ""
+  },
+  {
+    "query": "solve exp(-pi * z / sqrt(1 - z^2)) = 0.02 for z where 0 < z < 1",
+    "source": "cache",
+    "result": "z = (log(2) + 2 log(5))/sqrt(\u03c0^2 + log^2(2) + 4 log^2(5) + 4 log(2) log(5))"
+  },
+  {
+    "query": "damped harmonic oscillator with I=6437.200000000001, k=117561.5458, c=42914.6667: settling time and overshoot",
+    "source": "cache",
+    "result": ""
+  },
+  {
+    "query": "solve exp(-pi * z / sqrt(1 - z^2)) = 0.01 for z where 0 < z < 1",
+    "source": "cache",
+    "result": "z = (2 (log(2) + log(5)))/sqrt(\u03c0^2 + 4 log^2(2) + 4 log^2(5) + 8 log(2) log(5))"
+  },
+  {
+    "query": "damped harmonic oscillator with I=12500.0, k=90474.2290, c=55555.5556: settling time and overshoot",
+    "source": "cache",
+    "result": ""
+  },
+  {
+    "query": "polynomial fit degree 2 for {{1125.0, 748253.7627811098}, {2430.0, 445257.54335334594}, {4000.0, 210039.9075824407}, {6437.200000000001, 117561.54576667397}, {12500.0, 90474.22899490588}}",
+    "source": "cache",
+    "result": "0.0113491 x^2 - 207.544 x + 920669."
+  },
+  {
+    "query": "polynomial fit degree 2 for {{1125.0, 0.517}, {2430.0, 0.591}, {4000.0, 0.69}, {6437.200000000001, 0.78}, {12500.0, 0.826}}",
+    "source": "cache",
+    "result": "-3.76804\u00d710^-9 x^2 + 0.0000788121 x + 0.429659"
+  }
+]

@@ -1,0 +1,72 @@
+{
+  "method": "wolfram_ode_exact",
+  "spring_k_fit": {
+    "expression": "0.0113491 x^2 - 207.544 x + 920669.",
+    "python_lambda": "lambda I: 0",
+    "coefficients": {},
+    "r_squared": -1.7041042410391625
+  },
+  "damping_ratio_fit": {
+    "expression": "-3.76804\u00d710^-9 x^2 + 0.0000788121 x + 0.429659",
+    "python_lambda": "lambda I: 0",
+    "coefficients": {},
+    "r_squared": -35.16456356937793
+  },
+  "calibration_points": [
+    {
+      "weight_kg": 5.0,
+      "arm_cm": 15.0,
+      "settle_s": 0.3,
+      "overshoot_pct": 15.0,
+      "spring_k": 748253.7627811098,
+      "damping_ratio": 0.517,
+      "damping_c": 30000.000000000004,
+      "natural_freq_hz": 4.104576224162356,
+      "moment_of_inertia": 1125.0
+    },
+    {
+      "weight_kg": 7.5,
+      "arm_cm": 18.0,
+      "settle_s": 0.5,
+      "overshoot_pct": 10.0,
+      "spring_k": 445257.54335334594,
+      "damping_ratio": 0.591,
+      "damping_c": 38880.00000000001,
+      "natural_freq_hz": 2.154381632377602,
+      "moment_of_inertia": 2430.0
+    },
+    {
+      "weight_kg": 10.0,
+      "arm_cm": 20.0,
+      "settle_s": 0.8,
+      "overshoot_pct": 5.0,
+      "spring_k": 210039.9075824407,
+      "damping_ratio": 0.69,
+      "damping_c": 40000.0,
+      "natural_freq_hz": 1.1532966890717056,
+      "moment_of_inertia": 4000.0
+    },
+    {
+      "weight_kg": 13.3,
+      "arm_cm": 22.0,
+      "settle_s": 1.2,
+      "overshoot_pct": 2.0,
+      "spring_k": 117561.54576667397,
+      "damping_ratio": 0.78,
+      "damping_c": 42914.66666666667,
+      "natural_freq_hz": 0.6801493294525441,
+      "moment_of_inertia": 6437.200000000001
+    },
+    {
+      "weight_kg": 20.0,
+      "arm_cm": 25.0,
+      "settle_s": 1.8,
+      "overshoot_pct": 1.0,
+      "spring_k": 90474.22899490588,
+      "damping_ratio": 0.826,
+      "damping_c": 55555.55555555555,
+      "natural_freq_hz": 0.42818117592654115,
+      "moment_of_inertia": 12500.0
+    }
+  ]
+}
