@@ -2,9 +2,7 @@
 Wolfram upgrade: Fit rational polynomials to squeeze breathing data.
 Replaces piecewise linear interpolation with O(1) closed-form evaluation.
 """
-
 from __future__ import annotations
-
 import json
 import os
 
@@ -12,8 +10,8 @@ import os
 def fit_squeeze_curves() -> None:
     """Fit rational polynomials to all lens squeeze breathing data."""
     from cinema_camera.wolfram_oracle import WolframOracle
-
     oracle = WolframOracle()
+
     cinema_path = os.environ["CINEMA_CAMERA_PATH"]
     lens_dir = os.path.join(cinema_path, "lenses")
 
@@ -32,8 +30,8 @@ def fit_squeeze_curves() -> None:
         if len(points) < 4:
             continue
 
-        x_data = [p[0] for p in points]
-        y_data = [p[1] for p in points]
+        x_data = [p["focus_m"] for p in points]
+        y_data = [p["effective_squeeze"] for p in points]
 
         result = oracle.fit_rational(x_data, y_data, degree=(2, 1), variable="f")
 
@@ -104,5 +102,4 @@ float co_evaluate_squeeze_fitted(
 
     with open(vex_path, "w", encoding="utf-8") as f:
         f.write(vex_code)
-
     print(f"Written: {vex_path}")

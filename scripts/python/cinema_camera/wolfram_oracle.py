@@ -17,6 +17,48 @@ Usage:
 
 from __future__ import annotations
 
+import concurrent.futures
+
+def _patch_wolframalpha():
+    """
+    Replace wolframalpha.Client.query with a fully synchronous implementation.
+
+    The stock wolframalpha library calls asyncio.run() internally, which
+    conflicts with Houdini's HoudiniEventLoop. Instead of fighting async,
+    we use synchronous httpx.Client directly — no event loop needed.
+    """
+    try:
+        import wolframalpha as _wa
+        import httpx
+        import multidict
+        import xmltodict
+
+        def _sync_query(self, input, params=(), **kwargs):
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.get(
+                    self.url,
+                    params=multidict.MultiDict(
+                        params, appid=self.app_id, input=input, **kwargs
+                    ),
+                )
+            content_type = resp.headers.get('Content-Type', '')
+            if 'xml' not in content_type:
+                raise RuntimeError(
+                    f"Wolfram API returned unexpected Content-Type: {content_type}. "
+                    f"Status: {resp.status_code}. Body: {resp.text[:200]}"
+                )
+            doc = xmltodict.parse(
+                resp.content,
+                postprocessor=_wa.Document.make,
+            )
+            return doc['queryresult']
+
+        _wa.Client.query = _sync_query
+    except ImportError:
+        pass
+
+_patch_wolframalpha()
+
 import json
 import math
 import os
