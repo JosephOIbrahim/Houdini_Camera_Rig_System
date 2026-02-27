@@ -2,6 +2,9 @@
     "env": [
         {
             "CINEMA_CAMERA_PATH": "C:/Users/User/OneDrive/Documents/houdini21.0/cinema_camera"
+        },
+        {
+            "WOLFRAM_APP_ID": "YOUR-APP-ID-HERE"
         }
     ]
 }
