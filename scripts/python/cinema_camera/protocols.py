@@ -241,6 +241,24 @@ class MechanicalSpec:
 
 
 @dataclass(frozen=True)
+class PupilShiftFit:
+    """Wolfram-fitted entrance pupil position as function of focus distance."""
+    coefficients: dict[str, float]  # {a0, a1, b1}
+    r_squared: float
+
+    def evaluate(self, focus_m: float) -> float:
+        """Returns entrance_pupil_offset_mm at given focus distance."""
+        f = max(0.3, focus_m)
+        a0 = self.coefficients.get("a0", 0.0)
+        a1 = self.coefficients.get("a1", 0.0)
+        b1 = self.coefficients.get("b1", 0.0)
+        denom = 1.0 + b1 * f
+        if abs(denom) < 1e-8:
+            return a0
+        return (a0 + a1 * f) / denom
+
+
+@dataclass(frozen=True)
 class SqueezeBreathingCurve:
     """
     Focus-dependent anamorphic squeeze variation ("Mumps").

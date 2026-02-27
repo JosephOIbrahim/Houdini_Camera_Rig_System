@@ -85,3 +85,62 @@ def derive_biomechanics(
         moment_of_inertia=moment_of_inertia,
         combined_weight_kg=combined_weight,
     )
+
+
+def derive_biomechanics_calibrated(
+    camera_state: CameraState,
+    lens_state: LensState,
+    body_weight_kg: float = 3.9,
+    sensor_to_mounting_face_cm: float = 8.0,
+) -> BiomechanicsParams:
+    """
+    Wolfram-calibrated version of derive_biomechanics().
+
+    Uses exact ODE-derived curves instead of hand-tuned linear
+    approximations. Falls back to derive_biomechanics() if
+    calibration file is missing.
+    """
+    import json
+    import os
+
+    cinema_path = os.environ.get("CINEMA_CAMERA_PATH", "")
+    cal_path = os.path.join(cinema_path, "biomechanics_calibration.json")
+
+    if not os.path.exists(cal_path):
+        return derive_biomechanics(
+            camera_state, lens_state, body_weight_kg,
+            sensor_to_mounting_face_cm,
+        )
+
+    with open(cal_path, "r", encoding="utf-8") as f:
+        cal = json.load(f)
+
+    lens_weight = lens_state.rig_weight_kg
+    combined_weight = body_weight_kg + lens_weight
+
+    lens_half_length_cm = 0.0
+    if lens_state.spec.has_mechanics:
+        lens_half_length_cm = lens_state.spec.mechanics.length_mm / 20.0
+
+    moment_arm_cm = sensor_to_mounting_face_cm + lens_half_length_cm
+    inertia = combined_weight * (moment_arm_cm ** 2)
+
+    spring_fn = eval(cal["spring_k_fit"]["python_lambda"])  # noqa: S307
+    damp_fn = eval(cal["damping_ratio_fit"]["python_lambda"])  # noqa: S307
+
+    spring_k = max(1.0, spring_fn(inertia))
+    damping_ratio = max(0.1, min(0.99, damp_fn(inertia)))
+
+    lag_frames = combined_weight * 0.3
+    handheld_amp = max(0.05, 1.5 / combined_weight)
+    handheld_freq = max(2.0, 8.0 - combined_weight * 0.3)
+
+    return BiomechanicsParams(
+        spring_constant=spring_k,
+        damping_ratio=damping_ratio,
+        lag_frames=lag_frames,
+        handheld_amplitude_deg=handheld_amp,
+        handheld_frequency_hz=handheld_freq,
+        moment_of_inertia=inertia,
+        combined_weight_kg=combined_weight,
+    )
