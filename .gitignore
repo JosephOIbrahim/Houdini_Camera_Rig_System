@@ -1,0 +1,24 @@
+# Track only Cinema Camera Rig project files
+# Ignore everything by default, then whitelist project paths
+*
+
+# Whitelist: Cinema Camera Rig project
+!.gitignore
+!cinema_camera/
+!cinema_camera/**
+!scripts/
+!scripts/python/
+!scripts/python/cinema_camera/
+!scripts/python/cinema_camera/**
+!vex/
+!vex/include/
+!vex/include/libcinema_optics.h
+!vex/include/karma_cinema_lens.vfl
+!otls/
+!otls/cinema_*.hda
+!packages/cinema_camera_rig.json
+
+# Still ignore caches inside whitelisted dirs
+__pycache__/
+*.pyc
+.pytest_cache/

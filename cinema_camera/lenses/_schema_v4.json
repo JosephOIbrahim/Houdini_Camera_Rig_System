@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cinema_lens_v4.schema.json",
+  "title": "Cinema Lens Specification v4.0",
+  "type": "object",
+  "required": [
+    "lens_id", "manufacturer", "series", "focal_length_mm",
+    "t_stop_range", "iris_blades", "close_focus_m",
+    "image_circle_mm", "squeeze_ratio"
+  ],
+  "properties": {
+    "lens_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "manufacturer": { "type": "string" },
+    "series": { "type": "string" },
+    "focal_length_mm": { "type": "number", "exclusiveMinimum": 0 },
+    "t_stop_range": {
+      "type": "array", "items": { "type": "number" },
+      "minItems": 2, "maxItems": 2
+    },
+    "iris_blades": { "type": "integer", "minimum": 3 },
+    "close_focus_m": { "type": "number", "exclusiveMinimum": 0 },
+    "image_circle_mm": { "type": "number", "exclusiveMinimum": 0 },
+    "squeeze_ratio": { "type": "number", "minimum": 1.0 },
+    "mechanics": {
+      "type": "object",
+      "required": ["weight_kg", "length_mm", "front_diameter_mm", "entrance_pupil_offset_mm"],
+      "properties": {
+        "weight_kg": { "type": "number", "exclusiveMinimum": 0 },
+        "length_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "front_diameter_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "filter_thread": { "type": "string", "pattern": "^M[0-9]+x[0-9.]+" },
+        "focus_ring": {
+          "type": "object",
+          "required": ["rotation_deg", "gear_teeth"],
+          "properties": {
+            "rotation_deg": { "type": "number", "exclusiveMinimum": 0, "maximum": 360 },
+            "gear_teeth": { "type": "integer", "minimum": 1 },
+            "gear_module": { "type": "number", "default": 0.8 }
+          }
+        },
+        "iris_ring": {
+          "type": "object",
+          "required": ["rotation_deg", "gear_teeth"],
+          "properties": {
+            "rotation_deg": { "type": "number", "exclusiveMinimum": 0, "maximum": 360 },
+            "gear_teeth": { "type": "integer", "minimum": 1 },
+            "gear_module": { "type": "number", "default": 0.8 }
+          }
+        },
+        "entrance_pupil_offset_mm": { "type": "number", "minimum": 0 }
+      }
+    },
+    "squeeze_breathing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["focus_m", "effective_squeeze"],
+        "properties": {
+          "focus_m": { "oneOf": [
+            { "type": "number", "exclusiveMinimum": 0 },
+            { "type": "string", "enum": ["infinity"] }
+          ]},
+          "effective_squeeze": { "type": "number", "minimum": 1.0 }
+        }
+      }
+    },
+    "distortion": {
+      "type": "object",
+      "properties": {
+        "k1": { "type": "number" },
+        "k2": { "type": "number" },
+        "k3": { "type": "number" },
+        "p1": { "type": "number" },
+        "p2": { "type": "number" },
+        "squeeze_uniformity": { "type": "number", "minimum": 0.8, "maximum": 1.0 }
+      }
+    },
+    "breathing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["focus_m", "fov_shift_pct"],
+        "properties": {
+          "focus_m": { "oneOf": [
+            { "type": "number", "exclusiveMinimum": 0 },
+            { "type": "string", "enum": ["infinity"] }
+          ]},
+          "fov_shift_pct": { "type": "number" }
+        }
+      }
+    }
+  }
+}

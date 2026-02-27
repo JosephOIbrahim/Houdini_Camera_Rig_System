@@ -1,0 +1,45 @@
+{
+  "lens_id": "cooke_ana_i_s35_300mm",
+  "manufacturer": "Cooke",
+  "series": "Anamorphic/i S35",
+  "focal_length_mm": 300.0,
+  "t_stop_range": [3.5, 22.0],
+  "iris_blades": 11,
+  "close_focus_m": 1.83,
+  "image_circle_mm": 31.1,
+  "squeeze_ratio": 2.0,
+  "mechanics": {
+    "weight_kg": 9.4,
+    "length_mm": 460.0,
+    "front_diameter_mm": 156.0,
+    "filter_thread": "M150x0.75",
+    "focus_ring": {
+      "rotation_deg": 300.0,
+      "gear_teeth": 160,
+      "gear_module": 0.8
+    },
+    "iris_ring": {
+      "rotation_deg": 80.0,
+      "gear_teeth": 134,
+      "gear_module": 0.8
+    },
+    "entrance_pupil_offset_mm": 320.0
+  },
+  "squeeze_breathing": [
+    { "focus_m": 1.83, "effective_squeeze": 1.90 },
+    { "focus_m": 3.0,  "effective_squeeze": 1.94 },
+    { "focus_m": 5.0,  "effective_squeeze": 1.97 },
+    { "focus_m": 15.0, "effective_squeeze": 1.99 },
+    { "focus_m": "infinity", "effective_squeeze": 2.0 }
+  ],
+  "distortion": {
+    "k1": -0.008,
+    "k2": 0.001,
+    "squeeze_uniformity": 0.96
+  },
+  "breathing": [
+    { "focus_m": 1.83, "fov_shift_pct": 1.8 },
+    { "focus_m": 5.0,  "fov_shift_pct": 0.5 },
+    { "focus_m": "infinity", "fov_shift_pct": 0.0 }
+  ]
+}
