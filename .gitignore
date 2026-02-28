@@ -18,7 +18,8 @@
 !otls/cinema_*.hda
 !packages/cinema_camera_rig.json
 
-# Still ignore caches inside whitelisted dirs
+# Ignore backups and caches inside whitelisted dirs
+**/backup/
 __pycache__/
 *.pyc
 .pytest_cache/
