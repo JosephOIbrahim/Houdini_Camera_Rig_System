@@ -84,19 +84,32 @@ def build_camera_rig_orchestrator_hda(
     chop_net.setComment("Biomechanics CHOPs\nSpring/Lag/Shake solver")
     chop_net.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
-    # Inside CHOPs: fetch + biomechanics reference
+    # Inside CHOPs: fetch -> biomechanics HDA -> output
     ch_fetch = chop_net.createNode("fetch", "camera_channels")
     ch_fetch.setComment("Fetch raw camera animation channels")
     ch_fetch.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
+    # Biomechanics sub-HDA instance
+    try:
+        ch_biomech = chop_net.createNode(
+            "cinema::chops_biomechanics", "biomech_solver"
+        )
+        ch_biomech.setInput(0, ch_fetch)
+        ch_biomech.setComment("Spring/Lag/Shake solver\nDriven by top-level parms")
+        ch_biomech.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        biomech_out = ch_biomech
+    except hou.OperationFailed:
+        # Sub-HDA not installed -- keep placeholder
+        biomech_out = ch_fetch
+
     # Output null for export
     ch_out = chop_net.createNode("null", "OUT_biomech")
-    ch_out.setInput(0, ch_fetch)
+    ch_out.setInput(0, biomech_out)
     ch_out.setDisplayFlag(True)
     chop_net.layoutChildren()
 
     # ── 6. COP network: post pipeline ────────────────────
-    cop_net = temp_subnet.createNode("copnet", "post_pipeline")
+    cop_net = temp_subnet.createNode("cop2net", "post_pipeline")
     cop_net.setComment(
         "Post-Processing Pipeline\n"
         "Flare -> Noise -> STMap AOV"
@@ -108,31 +121,52 @@ def build_camera_rig_orchestrator_hda(
     cop_in.setComment("INPUT: Rendered image from Karma")
     cop_in.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
-    cop_flare_ref = cop_net.createNode("null", "flare_placeholder")
-    cop_flare_ref.setInput(0, cop_in)
-    cop_flare_ref.setComment(
-        "cinema::cop_anamorphic_flare::2.0\n"
-        "Replace with HDA instance"
-    )
-    cop_flare_ref.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    # Flare sub-HDA: cinema::cop_anamorphic_flare (1 input)
+    try:
+        cop_flare = cop_net.createNode(
+            "cinema::cop_anamorphic_flare", "anamorphic_flare"
+        )
+        cop_flare.setInput(0, cop_in)
+        cop_flare.setComment("Anamorphic Flare\nDriven by top-level parms")
+        cop_flare.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        flare_out = cop_flare
+    except hou.OperationFailed:
+        # Sub-HDA not installed -- fallback to passthrough null
+        flare_out = cop_net.createNode("null", "flare_placeholder")
+        flare_out.setInput(0, cop_in)
+        flare_out.setComment("cinema::cop_anamorphic_flare not installed")
+        flare_out.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
-    cop_noise_ref = cop_net.createNode("null", "noise_placeholder")
-    cop_noise_ref.setInput(0, cop_flare_ref)
-    cop_noise_ref.setComment(
-        "cinema::cop_sensor_noise::1.0\n"
-        "Replace with HDA instance"
-    )
-    cop_noise_ref.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    # Noise sub-HDA: cinema::cop_sensor_noise (1 input)
+    try:
+        cop_noise = cop_net.createNode(
+            "cinema::cop_sensor_noise", "sensor_noise"
+        )
+        cop_noise.setInput(0, flare_out)
+        cop_noise.setComment("Sensor Noise\nDriven by top-level parms")
+        cop_noise.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        noise_out = cop_noise
+    except hou.OperationFailed:
+        noise_out = cop_net.createNode("null", "noise_placeholder")
+        noise_out.setInput(0, flare_out)
+        noise_out.setComment("cinema::cop_sensor_noise not installed")
+        noise_out.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
-    cop_stmap_ref = cop_net.createNode("null", "stmap_placeholder")
-    cop_stmap_ref.setComment(
-        "cinema::cop_stmap_aov::1.0\n"
-        "Independent branch — generates STMap AOV"
-    )
-    cop_stmap_ref.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    # STMap sub-HDA: cinema::cop_stmap_aov (independent branch, no main-chain input)
+    try:
+        cop_stmap = cop_net.createNode(
+            "cinema::cop_stmap_aov", "stmap_aov"
+        )
+        cop_stmap.setComment("STMap AOV\nIndependent branch — driven by top-level parms")
+        cop_stmap.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    except hou.OperationFailed:
+        cop_stmap = cop_net.createNode("null", "stmap_placeholder")
+        cop_stmap.setComment("cinema::cop_stmap_aov not installed")
+        cop_stmap.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
+    # Main chain output: IN -> flare -> noise -> OUT
     cop_out = cop_net.createNode("null", "OUT_composited")
-    cop_out.setInput(0, cop_noise_ref)
+    cop_out.setInput(0, noise_out)
     cop_out.setDisplayFlag(True)
 
 
@@ -452,6 +486,76 @@ def build_camera_rig_orchestrator_hda(
         pivot_node.parm("tz").setExpression(
             '-ch("../entrance_pupil_offset_mm") / 10.0'
         )
+
+    # ── 10b. Wire sub-HDA parameters to orchestrator ─────
+    # Relative path from sub-HDA (2 levels deep) to orchestrator: ../../parm_name
+
+    # Flare sub-HDA parms
+    flare_node = hda_node.node("post_pipeline/anamorphic_flare")
+    if flare_node:
+        for sub_parm, top_parm in [
+            ("enable", "enable_flare"),
+            ("threshold", "flare_threshold"),
+            ("intensity", "flare_intensity"),
+            ("squeeze_ratio", "effective_squeeze"),
+        ]:
+            if flare_node.parm(sub_parm):
+                flare_node.parm(sub_parm).setExpression(
+                    'ch("../../{}")'.format(top_parm)
+                )
+
+    # Noise sub-HDA parms
+    noise_node = hda_node.node("post_pipeline/sensor_noise")
+    if noise_node:
+        for sub_parm, top_parm in [
+            ("enable", "enable_sensor_noise"),
+            ("exposure_index", "exposure_index"),
+            ("native_iso", "native_iso"),
+            ("photon_noise_amount", "photon_noise_amount"),
+            ("read_noise_amount", "read_noise_amount"),
+        ]:
+            if noise_node.parm(sub_parm):
+                noise_node.parm(sub_parm).setExpression(
+                    'ch("../../{}")'.format(top_parm)
+                )
+
+    # STMap sub-HDA parms
+    stmap_node = hda_node.node("post_pipeline/stmap_aov")
+    if stmap_node:
+        for sub_parm, top_parm in [
+            ("resolution_x", "resolution_x"),
+            ("resolution_y", "resolution_y"),
+            ("dist_k1", "dist_k1"),
+            ("dist_k2", "dist_k2"),
+            ("dist_k3", "dist_k3"),
+            ("dist_p1", "dist_p1"),
+            ("dist_p2", "dist_p2"),
+            ("dist_sq_uniformity", "dist_sq_uniformity"),
+            ("effective_squeeze", "effective_squeeze"),
+        ]:
+            if stmap_node.parm(sub_parm):
+                stmap_node.parm(sub_parm).setExpression(
+                    'ch("../../{}")'.format(top_parm)
+                )
+
+    # Biomechanics sub-HDA parms
+    biomech_node = hda_node.node("biomechanics/biomech_solver")
+    if biomech_node:
+        for sub_parm, top_parm in [
+            ("combined_weight_kg", "combined_weight_kg"),
+            ("moment_arm_cm", "moment_arm_cm"),
+            ("spring_constant", "spring_constant"),
+            ("damping_ratio", "damping_ratio"),
+            ("lag_frames", "lag_frames"),
+            ("enable_handheld", "enable_handheld"),
+            ("shake_amplitude_deg", "shake_amplitude_deg"),
+            ("shake_frequency_hz", "shake_frequency_hz"),
+            ("auto_derive", "auto_derive"),
+        ]:
+            if biomech_node.parm(sub_parm):
+                biomech_node.parm(sub_parm).setExpression(
+                    'ch("../../{}")'.format(top_parm)
+                )
 
     # ── 11. Set HDA metadata ─────────────────────────────
     hda_def.setIcon("OBJ_camera")

@@ -186,7 +186,7 @@ def build_chops_biomechanics_hda(
     ))
     ptg.append(shake_folder)
 
-    hda_node.setParmTemplateGroup(ptg)
+    hda_def.setParmTemplateGroup(ptg)
 
     # ── HDA metadata ─────────────────────────────────────
     hda_def.setIcon("CHOP_spring")
@@ -200,6 +200,7 @@ def build_chops_biomechanics_hda(
     )
 
     # ── Save and clean up ────────────────────────────────
+    hda_def.updateFromNode(hda_node)
     hda_def.save(hda_path)
     hda_node.destroy()
     temp_net.destroy()
