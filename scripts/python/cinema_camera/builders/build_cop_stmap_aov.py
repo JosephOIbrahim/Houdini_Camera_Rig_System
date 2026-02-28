@@ -173,7 +173,7 @@ def build_cop_stmap_aov_hda(
     ))
     ptg.append(dist_folder)
 
-    hda_node.setParmTemplateGroup(ptg)
+    hda_def.setParmTemplateGroup(ptg)
 
     # ── HDA metadata ─────────────────────────────────────
     hda_def.setIcon("COP2_fetch")
@@ -182,6 +182,7 @@ def build_cop_stmap_aov_hda(
     )
 
     # ── Save and clean up ────────────────────────────────
+    hda_def.updateFromNode(hda_node)
     hda_def.save(hda_path)
     hda_node.destroy()
     temp_cop.destroy()

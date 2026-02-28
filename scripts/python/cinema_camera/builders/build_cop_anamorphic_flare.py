@@ -176,7 +176,7 @@ def build_cop_anamorphic_flare_hda(
     ))
     ptg.append(flare_folder)
 
-    hda_node.setParmTemplateGroup(ptg)
+    hda_def.setParmTemplateGroup(ptg)
 
     # ── HDA metadata ─────────────────────────────────────
     hda_def.setIcon("COP2_contrast")
@@ -185,6 +185,7 @@ def build_cop_anamorphic_flare_hda(
     )
 
     # ── Save and clean up ────────────────────────────────
+    hda_def.updateFromNode(hda_node)
     hda_def.save(hda_path)
     hda_node.destroy()
     temp_cop.destroy()
