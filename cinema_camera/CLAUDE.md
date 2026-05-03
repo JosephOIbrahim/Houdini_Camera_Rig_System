@@ -1,5 +1,25 @@
 # Cinema Camera Rig v4.0 — Claude Code Agent Team Handoff
 
+---
+
+## v3.0 OVERRIDE STATUS (read this first)
+
+**Repo:** `C:\Users\User\Houdini_Camera_Rig_System` is now the canonical source of truth for everything (HDAs, Python package, VEX headers, lens JSONs).
+
+**Override mechanism:** `packages/cinema_camera_rig.json` sets `path: $CINEMA_CAMERA_REPO`, so Houdini auto-prepends `<repo>/otls/`, `<repo>/vex/include/`, and `<repo>/scripts/python/` to its search paths. New nodes resolve to `cinema::*::3.0` (the repo versions); existing scenes pinned to `::1.0` / `::2.0` still work because the OneDrive-installed HDAs are still loadable.
+
+**Install:** `scripts/install_package.ps1` symlinks (or copies) `packages/cinema_camera_rig.json` + `packages/cinema_camera_rig.local.json` into `~/houdini21.0/packages/`. Restart Houdini. Verify with `os.environ.get("CINEMA_CAMERA_REPO")` in the Houdini Python shell.
+
+**Rebuild HDAs:** `python scripts/python/cinema_camera/builders/_rebuild_all_hdas.py` (Synapse must be running). Builds all 6 HDAs in dependency order, installs them, and saves to `<repo>/otls/`.
+
+**Lens registry:** `cinema_camera/lenses/cooke_ana_i_s35_*.json` is now generated from `scripts/python/cinema_camera/lenses/cooke_anamorphic_i_s35.py` (PDF-authoritative single source of truth). Rebuild all 10 with `python scripts/python/cinema_camera/lenses/_emit_lens_jsons.py`. PDF: `Downloads/COOKE_Anamorphic-i-S35_Specification_030623.pdf`. Heuristic fields (entrance pupil, mumps curve, distortion) carry `_provenance` annotations and should be replaced when Wolfram W2-W5 fits work.
+
+**Secrets:** `WOLFRAM_APP_ID` lives in `packages/cinema_camera_rig.local.json` (gitignored). Do not put secrets back into the tracked `cinema_camera_rig.json`.
+
+**Dual-path sync (below) is LEGACY.** When the override package is installed, the only path that matters is `$CINEMA_CAMERA_REPO`. The OneDrive `cinema_camera/` and `~/houdini21.0/scripts/python/cinema_camera/` directories are no longer authoritative — they're dormant siblings.
+
+---
+
 ## CLAUDE.md (Place in project root)
 
 ```

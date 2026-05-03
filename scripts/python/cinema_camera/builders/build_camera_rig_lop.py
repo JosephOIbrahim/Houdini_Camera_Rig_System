@@ -1,7 +1,7 @@
 """
 Cinema Camera Rig v4.0 -- Solaris/LOP HDA Builder
 
-Creates cinema::camera_rig_lop::1.0 — a native Solaris LOP HDA that:
+Creates cinema::camera_rig_lop::3.0 — a native Solaris LOP HDA that:
   - Authors the full nodal-parallax USD Xform hierarchy via Python Script LOP
   - Configures Karma RenderProduct with Cooke /i + ASWF EXR metadata
   - Binds Karma CVEX lens shader
@@ -161,6 +161,136 @@ _SCRIPT_BUILD_RIG = textwrap.dedent("""\
     pupil_prim = pupil_xform.GetPrim()
     UsdGeom.Imageable(pupil_prim).CreatePurposeAttr().Set(UsdGeom.Tokens.guide)
 """)
+
+# Python Script LOP: Apply biomechanics (spring/lag filter + handheld shake)
+# Reads optional input USD prim's rotateXYZ animation, runs damped-spring
+# solver, layers procedural shake, writes time samples to FluidHead Xform.
+_SCRIPT_APPLY_BIOMECHANICS = textwrap.dedent("""\
+    import math
+    from pxr import Gf, Sdf, Usd, UsdGeom
+
+    node = hou.pwd()
+    hda = node.parent()
+    stage = hou.pwd().editableStage()
+
+    if hda.evalParm("enable_biomechanics"):
+        rig_path = hda.evalParm("usd_camera_path")
+        if not rig_path or rig_path == "/CinemaRig/Camera":
+            rig_path = "/CinemaRig"
+        head_path = rig_path + "/FluidHead"
+
+        head_prim = stage.GetPrimAtPath(head_path)
+        if head_prim and head_prim.IsValid():
+
+            # ── Solver parameters (auto-derive or use HDA parms) ──────
+            weight = hda.evalParm("combined_weight_kg")
+            if hda.evalParm("auto_derive"):
+                spring_k   = max(5.0, 25.0 - weight * 1.3)
+                damping    = min(0.95, 0.6 + weight * 0.025)
+                lag_frames = weight * 0.3
+                shake_amp  = max(0.05, 1.5 / weight)
+                shake_freq = max(2.0, 8.0 - weight * 0.3)
+            else:
+                spring_k   = hda.evalParm("spring_constant")
+                damping    = hda.evalParm("damping_ratio")
+                lag_frames = hda.evalParm("lag_frames")
+                shake_amp  = hda.evalParm("shake_amplitude_deg")
+                shake_freq = hda.evalParm("shake_frequency_hz")
+
+            enable_handheld = hda.evalParm("enable_handheld")
+            input_path      = (hda.evalParm("input_camera_path") or "").strip()
+
+            fstart, fend = hou.playbar.frameRange()
+            fstart, fend = int(fstart), int(fend)
+            fps = hou.fps() or 24.0
+            dt  = 1.0 / fps
+
+            # ── Get or create FluidHead's xformOp:rotateXYZ ───────────
+            head_xformable = UsdGeom.Xformable(head_prim)
+            rotate_op = None
+            for op in head_xformable.GetOrderedXformOps():
+                if op.GetOpName() == "xformOp:rotateXYZ":
+                    rotate_op = op
+                    break
+            if rotate_op is None:
+                rotate_op = head_xformable.AddRotateXYZOp()
+
+            # ── Read input rotation animation (if input_camera_path set)
+            # Requirement: input prim has xformOp:rotateXYZ time samples
+            # (the standard Houdini-authored format). Falls back to skip
+            # if the prim or op is missing.
+            input_rotations = []
+            if input_path:
+                input_prim = stage.GetPrimAtPath(input_path)
+                if input_prim and input_prim.IsValid():
+                    input_xf = UsdGeom.Xformable(input_prim)
+                    src_rot_op = None
+                    for op in input_xf.GetOrderedXformOps():
+                        if op.GetOpName() == "xformOp:rotateXYZ":
+                            src_rot_op = op
+                            break
+                    if src_rot_op is not None:
+                        for f in range(fstart, fend + 1):
+                            v = src_rot_op.Get(Usd.TimeCode(f))
+                            if v is not None:
+                                input_rotations.append([float(v[0]), float(v[1]), float(v[2])])
+                            else:
+                                input_rotations.append([0.0, 0.0, 0.0])
+
+            # ── Damped-spring solver (operator + fluid head dynamics) ─
+            # ODE: x'' = -k*(x - target) - c*x'  with c = 2*sqrt(k)*zeta
+            # Discretized via explicit Euler.
+            filtered = []
+            if input_rotations:
+                c = 2.0 * math.sqrt(spring_k) * damping
+                lag_int = max(0, int(round(lag_frames)))
+                x = list(input_rotations[0])
+                v = [0.0, 0.0, 0.0]
+                for i in range(len(input_rotations)):
+                    target = input_rotations[max(0, i - lag_int)]
+                    for axis in range(3):
+                        accel = -spring_k * (x[axis] - target[axis]) - c * v[axis]
+                        v[axis] += accel * dt
+                        x[axis] += v[axis] * dt
+                    filtered.append(list(x))
+
+            # ── Handheld shake (deterministic procedural noise) ───────
+            shake = None
+            if enable_handheld and shake_amp > 0:
+                shake = []
+                two_pi = 2.0 * math.pi
+                for f in range(fstart, fend + 1):
+                    t = f * dt
+                    sx = (math.sin(two_pi*shake_freq*t)              * 0.7 +
+                          math.sin(two_pi*shake_freq*1.7*t + 0.7)    * 0.3) * shake_amp
+                    sy = (math.sin(two_pi*shake_freq*1.13*t + 1.7)   * 0.7 +
+                          math.sin(two_pi*shake_freq*0.83*t + 2.3)   * 0.3) * shake_amp * 0.7
+                    sz = (math.sin(two_pi*shake_freq*0.87*t + 3.1)   * 0.5 +
+                          math.sin(two_pi*shake_freq*1.4*t  + 0.4)   * 0.3) * shake_amp * 0.4
+                    shake.append([sx, sy, sz])
+
+            # ── Author USD time samples on FluidHead's rotateXYZ ──────
+            n_frames = fend - fstart + 1
+            for i, f in enumerate(range(fstart, fend + 1)):
+                base = filtered[i] if filtered else [0.0, 0.0, 0.0]
+                s    = shake[i]    if shake    else [0.0, 0.0, 0.0]
+                total = Gf.Vec3f(base[0] + s[0], base[1] + s[1], base[2] + s[2])
+                rotate_op.Set(total, Usd.TimeCode(f))
+
+            # ── Author solver metadata on FluidHead ───────────────────
+            def _meta(name, sdf_t, val):
+                head_prim.CreateAttribute(name, sdf_t).Set(val)
+            _meta("cinema:rig:biomech:enabled",          Sdf.ValueTypeNames.Bool,   True)
+            _meta("cinema:rig:biomech:springK",          Sdf.ValueTypeNames.Float,  spring_k)
+            _meta("cinema:rig:biomech:damping",          Sdf.ValueTypeNames.Float,  damping)
+            _meta("cinema:rig:biomech:lagFrames",        Sdf.ValueTypeNames.Float,  lag_frames)
+            _meta("cinema:rig:biomech:handheldEnabled",  Sdf.ValueTypeNames.Bool,   bool(enable_handheld))
+            _meta("cinema:rig:biomech:handheldAmpDeg",   Sdf.ValueTypeNames.Float,  shake_amp)
+            _meta("cinema:rig:biomech:handheldFreqHz",   Sdf.ValueTypeNames.Float,  shake_freq)
+            _meta("cinema:rig:biomech:filteredFrames",   Sdf.ValueTypeNames.Int,    len(filtered))
+            _meta("cinema:rig:biomech:totalFrames",      Sdf.ValueTypeNames.Int,    n_frames)
+""")
+
 
 # Python Script LOP: Configure RenderProduct with Cooke /i metadata
 _SCRIPT_RENDER_PRODUCT = textwrap.dedent("""\
@@ -324,10 +454,10 @@ _SCRIPT_RENDER_SETTINGS = textwrap.dedent("""\
 
 def build_camera_rig_lop_hda(
     save_dir: str = None,
-    hda_name: str = "cinema_camera_rig_lop_1.0.hda",
+    hda_name: str = "cinema_camera_rig_lop_3.0.hda",
 ) -> str:
     """
-    Build cinema::camera_rig_lop::1.0 LOP HDA in live Houdini session.
+    Build cinema::camera_rig_lop::3.0 LOP HDA in live Houdini session.
 
     Creates a Solaris-native camera rig that authors the full USD Xform
     hierarchy, Karma lens shader, RenderProduct with Cooke /i metadata,
@@ -344,7 +474,13 @@ def build_camera_rig_lop_hda(
     import hou
 
     if save_dir is None:
-        save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda")
+        # v3.0: consolidate into <repo>/otls/ (Houdini auto-scans).
+        repo = os.environ.get("CINEMA_CAMERA_REPO")
+        if repo:
+            save_dir = os.path.join(repo, "otls")
+        else:
+            save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda")
+        os.makedirs(save_dir, exist_ok=True)
 
     hda_path = os.path.join(save_dir, hda_name)
 
@@ -367,9 +503,21 @@ def build_camera_rig_lop_hda(
     )
     ps_rig.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
+    # ── 2b. Python Script LOP: Apply biomechanics ──────────
+    # Spring/lag filter on input camera animation + procedural handheld shake.
+    # Writes time samples to /CinemaRig/FluidHead's rotateXYZ op.
+    ps_biomech = temp_subnet.createNode("pythonscript", "apply_biomechanics")
+    ps_biomech.setInput(0, ps_rig)
+    ps_biomech.parm("python").set(_SCRIPT_APPLY_BIOMECHANICS)
+    ps_biomech.setComment(
+        "Biomechanics Filter\n"
+        "Spring/lag/shake applied to FluidHead Xform (Solaris-native)"
+    )
+    ps_biomech.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
     # ── 3. Python Script LOP: Lens shader binding ──────────
     ps_shader = temp_subnet.createNode("pythonscript", "bind_lens_shader")
-    ps_shader.setInput(0, ps_rig)
+    ps_shader.setInput(0, ps_biomech)
     ps_shader.parm("python").set(_SCRIPT_LENS_SHADER)
     ps_shader.setComment(
         "Karma CVEX Lens Shader\n"
@@ -414,13 +562,15 @@ def build_camera_rig_lop_hda(
     temp_subnet.layoutChildren()
 
     # ── 8. Create HDA from subnet ──────────────────────────
+    # Type name must include ::version explicitly. The `version` kwarg only sets
+    # metadata; without ::3.0 in `name` Houdini registers the op as unversioned.
     hda_node = temp_subnet.createDigitalAsset(
-        name="cinema::camera_rig_lop",
+        name="cinema::camera_rig_lop::3.0",
         hda_file_name=hda_path,
-        description="Cinema Camera Rig LOP v1.0",
+        description="Cinema Camera Rig LOP v3.0",
         min_num_inputs=0,
         max_num_inputs=1,  # Optional input: upstream stage to merge with
-        version="1.0",
+        version="3.0",
     )
 
     hda_type = hda_node.type()
@@ -435,12 +585,12 @@ def build_camera_rig_lop_hda(
     # ── 10. Set HDA metadata ───────────────────────────────
     hda_def.setIcon("LOP_camera")
     hda_def.setComment(
-        "Cinema Camera Rig LOP v1.0\n"
+        "Cinema Camera Rig LOP v3.0\n"
         "Solaris-native virtual cinematography rig\n"
         "Authors full USD hierarchy with nodal parallax correction"
     )
     hda_def.setExtraInfo(
-        "Cinema Camera Rig v4.0 (LOP HDA v1.0)\n"
+        "Cinema Camera Rig v4.0 (LOP HDA v3.0)\n"
         "Pillars: B (Nodal Parallax), D (CVEX Lens Shader), "
         "E (Pipeline Bridge)\n"
         "USD hierarchy: /CinemaRig/FluidHead/Body/Sensor/EntrancePupil\n"

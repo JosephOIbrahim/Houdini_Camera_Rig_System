@@ -1,10 +1,16 @@
 {
+    "//":         "Cinema Camera Rig override package -- prepends repo paths to HOUDINI_PATH so repo otls/, vex/, scripts/python/ win over the OneDrive install.",
+    "//install":  "Run scripts/install_package.ps1 to symlink/copy this file into <user>/houdini21.0/packages/.",
+    "//secrets":  "WOLFRAM_APP_ID lives in cinema_camera_rig.local.json (untracked). Keep secrets out of this file.",
+
+    "load_package_once": true,
+    "enable":            true,
+
+    "path": "$CINEMA_CAMERA_REPO",
+
     "env": [
-        {
-            "CINEMA_CAMERA_PATH": "C:/Users/User/OneDrive/Documents/houdini21.0/cinema_camera"
-        },
-        {
-            "WOLFRAM_APP_ID": "WOLFRAM_APP_ID_REDACTED"
-        }
+        { "CINEMA_CAMERA_REPO":    "C:/Users/User/Houdini_Camera_Rig_System" },
+        { "CINEMA_CAMERA_PATH":    "$CINEMA_CAMERA_REPO/cinema_camera" },
+        { "CINEMA_CAMERA_VERSION": "3.0" }
     ]
 }

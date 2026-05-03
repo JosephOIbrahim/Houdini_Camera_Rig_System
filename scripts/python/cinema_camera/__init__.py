@@ -35,3 +35,8 @@ __all__ = [
     "SensorSpec",
     "SqueezeBreathingCurve",
 ]
+
+# Side-effect imports: trigger lens / body provider registration on package import
+# so cinema_camera.registry.list_lenses() returns the bundled providers.
+from . import lenses  # noqa: F401  -- registers "cooke_ana_i_s35"
+from . import bodies  # noqa: F401  -- registers built-in camera bodies

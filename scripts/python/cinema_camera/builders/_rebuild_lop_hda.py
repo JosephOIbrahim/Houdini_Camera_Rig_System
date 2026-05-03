@@ -24,17 +24,27 @@ from synapse_ws import SynapseClient, SynapseConnectionError, SynapseExecutionEr
 BUILD_CODE = r"""
 import os, sys, traceback
 
-# Ensure cinema_camera package is importable
-scripts_path = r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python"
+# v3.0: prefer CINEMA_CAMERA_REPO (set by packages/cinema_camera_rig.json),
+# fall back to legacy OneDrive layout for compatibility.
+repo = os.environ.get("CINEMA_CAMERA_REPO")
+legacy_onedrive = r"C:\Users\User\OneDrive\Documents\houdini21.0"
+
+if repo:
+    scripts_path = os.path.join(repo, "scripts", "python")
+    hda_dir = os.path.join(repo, "otls")
+else:
+    scripts_path = os.path.join(legacy_onedrive, "scripts", "python")
+    hda_dir = os.path.join(os.environ.get("CINEMA_CAMERA_PATH", legacy_onedrive), "hda")
+
 if scripts_path not in sys.path:
     sys.path.insert(0, scripts_path)
 
-# Set CINEMA_CAMERA_PATH if not already set
 if "CINEMA_CAMERA_PATH" not in os.environ:
-    os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python\cinema_camera"
+    os.environ["CINEMA_CAMERA_PATH"] = (
+        os.path.join(repo, "cinema_camera") if repo
+        else os.path.join(legacy_onedrive, "cinema_camera")
+    )
 
-cinema_path = os.environ["CINEMA_CAMERA_PATH"]
-hda_dir = os.path.join(cinema_path, "hda")
 os.makedirs(hda_dir, exist_ok=True)
 
 # Force reimport to pick up latest code
@@ -82,9 +92,9 @@ old = stage_net.node("__diag_cinema_rig_lop")
 if old:
     old.destroy()
 
-# Try creating the node
+# Try creating the node (prefer 3.0; fall back to 1.0 then unversioned)
 diag_node = None
-create_names = ["cinema::camera_rig_lop::1.0", "cinema::camera_rig_lop"]
+create_names = ["cinema::camera_rig_lop::3.0", "cinema::camera_rig_lop::1.0", "cinema::camera_rig_lop"]
 for n in create_names:
     try:
         diag_node = stage_net.createNode(n, "__diag_cinema_rig_lop")
@@ -158,16 +168,18 @@ result = json.dumps(info)
 VERIFY_CODE = r"""
 import hou, os, sys
 
-scripts_path = r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python"
+repo = os.environ.get("CINEMA_CAMERA_REPO")
+scripts_path = os.path.join(repo, "scripts", "python") if repo else r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python"
 if scripts_path not in sys.path:
     sys.path.insert(0, scripts_path)
 
 errors = []
 warnings = []
 
-# 1. Check HDA is installed -- try multiple lookup patterns
+# 1. Check HDA is installed -- try multiple lookup patterns (3.0 preferred)
 hda_type = None
 lookup_names = [
+    "cinema::camera_rig_lop::3.0",
     "cinema::camera_rig_lop::1.0",
     "cinema::camera_rig_lop",
     "camera_rig_lop",
@@ -203,6 +215,7 @@ if old_test:
 # Try multiple node type names (Houdini version-dependent)
 test_node = None
 create_names = [
+    "cinema::camera_rig_lop::3.0",
     "cinema::camera_rig_lop::1.0",
     "cinema::camera_rig_lop",
 ]
@@ -358,7 +371,7 @@ async def main():
             print(f"  Connected: {ping}")
 
             # Build
-            print("\n[2/3] Building cinema::camera_rig_lop::1.0...", flush=True)
+            print("\n[2/3] Building cinema::camera_rig_lop::3.0...", flush=True)
             build_result = await client.execute_python(BUILD_CODE, timeout=60.0)
             if isinstance(build_result, str):
                 build_result = json.loads(build_result)

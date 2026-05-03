@@ -2,7 +2,7 @@
 Cinema Camera Rig v4.0 -- Shared Parameter Templates
 
 Builds the HDA parameter interface used by both the OBJ orchestrator
-(cinema::camera_rig::2.0) and the LOP builder (cinema::camera_rig_lop::1.0).
+(cinema::camera_rig::3.0) and the LOP builder (cinema::camera_rig_lop::3.0).
 
 Extracted from build_camera_rig_orchestrator.py to avoid duplication.
 """
@@ -172,6 +172,14 @@ def build_camera_rig_parm_templates():
         default_value=True,
         help="When on, camera motion is filtered through spring/lag/shake solver.",
     ))
+    bio_folder.addParmTemplate(hou.StringParmTemplate(
+        "input_camera_path", "Input Camera Prim", 1,
+        default_value=("",),
+        help="USD prim path with xformOp:rotateXYZ animation to filter through "
+             "the spring/lag solver. Output is written to /CinemaRig/FluidHead. "
+             "Leave empty to skip the spring filter (handheld shake still applies "
+             "if enabled). Common pattern: point at a Houdini-authored cam prim.",
+    ))
     bio_folder.addParmTemplate(hou.FloatParmTemplate(
         "combined_weight_kg", "Combined Weight (kg)", 1,
         default_value=(7.5,), min=1.0, max=30.0,
@@ -241,7 +249,7 @@ def build_camera_rig_parm_templates():
         "enable_flare", "Enable Anamorphic Flare",
         default_value=True,
         help="Apply horizontal anamorphic lens flare to bright sources. "
-             "Uses cinema::cop_anamorphic_flare::2.0 in the COP pipeline.",
+             "Uses cinema::cop_anamorphic_flare::3.0 in the COP pipeline.",
     ))
     post_folder.addParmTemplate(hou.FloatParmTemplate(
         "flare_threshold", "Flare Threshold", 1,
@@ -281,7 +289,7 @@ def build_camera_rig_parm_templates():
         "enable_stmap", "Generate STMap AOV",
         default_value=False,
         help="Output an ST map AOV encoding lens distortion for Nuke/Flame "
-             "post-production. Uses cinema::cop_stmap_aov::1.0.",
+             "post-production. Uses cinema::cop_stmap_aov::3.0.",
     ))
     folders.append(post_folder)
 

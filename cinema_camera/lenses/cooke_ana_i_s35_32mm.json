@@ -1,22 +1,22 @@
 {
-  "lens_id": "cooke_ana_i_s35_300mm",
+  "lens_id": "cooke_ana_i_s35_32mm",
   "manufacturer": "Cooke",
   "series": "Anamorphic/i S35",
-  "focal_length_mm": 300.0,
+  "focal_length_mm": 32.0,
   "t_stop_range": [
-    3.5,
+    2.3,
     22.0
   ],
   "iris_blades": 11,
-  "close_focus_m": 3.0,
+  "close_focus_m": 0.85,
   "image_circle_mm": 31.1,
   "squeeze_ratio": 2.0,
   "mount": "PL or LPL",
   "mechanics": {
-    "weight_kg": 9.4,
-    "length_mm": 381.0,
-    "front_diameter_mm": 136.0,
-    "filter_thread": "M131x0.75",
+    "weight_kg": 3.2,
+    "length_mm": 198.0,
+    "front_diameter_mm": 110.0,
+    "filter_thread": "none",
     "focus_ring": {
       "rotation_deg": 300.0,
       "gear_teeth": 140,
@@ -27,28 +27,28 @@
       "gear_teeth": 134,
       "gear_module": 0.8
     },
-    "entrance_pupil_offset_mm": 190.5
+    "entrance_pupil_offset_mm": 99.0
   },
   "fov_pdf_reference": {
-    "max_horizontal_deg": 8.5,
-    "max_vertical_deg": 3.5
+    "max_horizontal_deg": 77.5,
+    "max_vertical_deg": 32.6
   },
   "squeeze_breathing": [
     {
-      "focus_m": 3.0,
-      "effective_squeeze": 1.939
+      "focus_m": 0.85,
+      "effective_squeeze": 1.812
     },
     {
-      "focus_m": 5.4,
-      "effective_squeeze": 1.976
+      "focus_m": 1.53,
+      "effective_squeeze": 1.925
     },
     {
-      "focus_m": 12.0,
+      "focus_m": 3.4,
+      "effective_squeeze": 1.972
+    },
+    {
+      "focus_m": 10.2,
       "effective_squeeze": 1.991
-    },
-    {
-      "focus_m": 36.0,
-      "effective_squeeze": 1.997
     },
     {
       "focus_m": "infinity",
@@ -56,21 +56,21 @@
     }
   ],
   "distortion": {
-    "k1": -0.0082,
-    "k2": 0.0004,
+    "k1": -0.025,
+    "k2": 0.0039,
     "k3": 0.0,
     "p1": 0.0,
     "p2": 0.0,
-    "squeeze_uniformity": 0.97
+    "squeeze_uniformity": 0.926
   },
   "breathing": [
     {
-      "focus_m": 3.0,
-      "fov_shift_pct": 1.63
+      "focus_m": 0.85,
+      "fov_shift_pct": 5.0
     },
     {
-      "focus_m": 7.5,
-      "fov_shift_pct": 0.57
+      "focus_m": 2.12,
+      "fov_shift_pct": 1.75
     },
     {
       "focus_m": "infinity",

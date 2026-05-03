@@ -17,6 +17,16 @@
 !otls/
 !otls/cinema_*.hda
 !packages/cinema_camera_rig.json
+!packages/cinema_camera_rig.local.json.example
+!scripts/install_package.ps1
+!scripts/bootstrap_v3_build.py
+!scripts/verify_v3.py
+!.gitattributes
+!README.md
+
+# Secrets: cinema_camera_rig.local.json holds WOLFRAM_APP_ID and other secrets;
+# never commit it. The .example template above shows the schema.
+packages/cinema_camera_rig.local.json
 
 # Ignore backups and caches inside whitelisted dirs
 **/backup/

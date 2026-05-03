@@ -1,0 +1,16 @@
+# Force LF line endings on all text files. Without this, git core.autocrlf=true
+# rewrites .py/.md/.json on checkout, dirtying the OneDrive-mirrored working tree.
+* text=auto eol=lf
+
+# Binary types -- never touch
+*.hda      binary
+*.hip      binary
+*.hiplc    binary
+*.hipnc    binary
+*.exr      binary
+*.png      binary
+*.jpg      binary
+*.usd      binary
+*.usdc     binary
+*.usdz     binary
+*.pdf      binary

@@ -1,7 +1,7 @@
 """
 Cinema Camera Rig v4.0 -- Orchestrator HDA Builder
 
-Creates cinema::camera_rig::2.0 — the top-level LOP HDA that wires:
+Creates cinema::camera_rig::3.0 — the top-level LOP HDA that wires:
   - USD camera with nested Xform hierarchy (nodal parallax)
   - CHOPs biomechanics constraint
   - Lens shader binding
@@ -19,14 +19,14 @@ from .parm_templates import build_camera_rig_parm_templates
 
 def build_camera_rig_orchestrator_hda(
     save_dir: str = None,
-    hda_name: str = "cinema_camera_rig_2.0.hda",
+    hda_name: str = "cinema_camera_rig_3.0.hda",
 ) -> str:
     """
-    Build cinema::camera_rig::2.0 top-level HDA in live Houdini session.
+    Build cinema::camera_rig::3.0 top-level HDA in live Houdini session.
 
     This is a SOP-level HDA (Object context) that contains:
       1. Camera node with USD transform hierarchy
-      2. CHOPs biomechanics subnet (references cinema::chops_biomechanics::1.0)
+      2. CHOPs biomechanics subnet (references cinema::chops_biomechanics)
       3. Post-processing COP network references
       4. Parameter interface exposing all sub-HDA controls
 
@@ -35,7 +35,14 @@ def build_camera_rig_orchestrator_hda(
     import hou
 
     if save_dir is None:
-        save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda")
+        # v3.0: consolidate all HDAs into <repo>/otls/ (Houdini's canonical
+        # auto-scan dir). CINEMA_CAMERA_REPO is set by packages/cinema_camera_rig.json.
+        repo = os.environ.get("CINEMA_CAMERA_REPO")
+        if repo:
+            save_dir = os.path.join(repo, "otls")
+        else:
+            save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda")
+        os.makedirs(save_dir, exist_ok=True)
 
     hda_path = os.path.join(save_dir, hda_name)
 
@@ -178,13 +185,15 @@ def build_camera_rig_orchestrator_hda(
     temp_subnet.layoutChildren()
 
     # ── 8. Create HDA from subnet ────────────────────────
+    # Type name must include ::version explicitly. The `version` kwarg only sets
+    # metadata; without ::3.0 in `name` Houdini registers the op as unversioned.
     hda_node = temp_subnet.createDigitalAsset(
-        name="cinema::camera_rig",
+        name="cinema::camera_rig::3.0",
         hda_file_name=hda_path,
-        description="Cinema Camera Rig v2.0",
+        description="Cinema Camera Rig v3.0",
         min_num_inputs=0,
         max_num_inputs=0,
-        version="2.0",
+        version="3.0",
     )
 
     hda_type = hda_node.type()
@@ -285,12 +294,12 @@ def build_camera_rig_orchestrator_hda(
     # ── 11. Set HDA metadata ─────────────────────────────
     hda_def.setIcon("OBJ_camera")
     hda_def.setComment(
-        "Cinema Camera Rig v2.0\n"
+        "Cinema Camera Rig v3.0\n"
         "Virtual Cinematography Simulator\n"
         "Physically accurate lens behavior, biomechanics, and post-processing."
     )
     hda_def.setExtraInfo(
-        "Cinema Camera Rig v4.0 (HDA v2.0)\n"
+        "Cinema Camera Rig v4.0 (HDA v3.0)\n"
         "Sub-HDAs: chops_biomechanics, cop_anamorphic_flare, "
         "cop_sensor_noise, cop_stmap_aov\n"
         "Pillars: A (MechanicalSpec), B (Nodal Parallax), "

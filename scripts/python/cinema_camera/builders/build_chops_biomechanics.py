@@ -1,7 +1,7 @@
 """
 Cinema Camera Rig v4.0 -- CHOPs Biomechanics HDA Builder
 
-Creates cinema::chops_biomechanics::1.0
+Creates cinema::chops_biomechanics::3.0
 Physically-based camera inertia: spring solver + lag + optional handheld shake.
 
 Executed through Synapse bridge in a live Houdini session.
@@ -35,7 +35,7 @@ if node.parm("auto_derive").eval():
 
 def build_chops_biomechanics_hda(
     save_dir: str = None,
-    hda_name: str = "cinema_chops_biomechanics_1.0.hda",
+    hda_name: str = "cinema_chops_biomechanics_3.0.hda",
 ) -> str:
     """
     Build the CHOPs biomechanics HDA and save to disk.
@@ -44,8 +44,13 @@ def build_chops_biomechanics_hda(
     import hou
 
     if save_dir is None:
-        cinema_path = os.environ.get("CINEMA_CAMERA_PATH", "")
-        save_dir = os.path.join(cinema_path, "hda", "chops")
+        # v3.0: consolidate into <repo>/otls/ (Houdini auto-scans).
+        repo = os.environ.get("CINEMA_CAMERA_REPO")
+        if repo:
+            save_dir = os.path.join(repo, "otls")
+        else:
+            cinema_path = os.environ.get("CINEMA_CAMERA_PATH", "")
+            save_dir = os.path.join(cinema_path, "hda", "chops")
     os.makedirs(save_dir, exist_ok=True)
 
     # ── Create temporary CHOP network ────────────────────
@@ -112,13 +117,14 @@ def build_chops_biomechanics_hda(
 
     # ── Convert subnet to HDA ──────────────────────────────
     hda_path = os.path.join(save_dir, hda_name)
+    # Type name must include ::version explicitly (the `version` kwarg only sets metadata).
     hda_node = sub.createDigitalAsset(
-        name="cinema::chops_biomechanics",
+        name="cinema::chops_biomechanics::3.0",
         hda_file_name=hda_path,
         description="Cinema Biomechanics",
         min_num_inputs=1,
         max_num_inputs=1,
-        version="1.0",
+        version="3.0",
         ignore_external_references=True,
     )
     hda_def = hda_node.type().definition()

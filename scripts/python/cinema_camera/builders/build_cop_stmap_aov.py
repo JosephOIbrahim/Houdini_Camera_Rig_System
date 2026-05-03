@@ -1,7 +1,7 @@
 """
 Cinema Camera Rig v4.0 -- COP STMap AOV HDA Builder
 
-Creates cinema::cop_stmap_aov::1.0
+Creates cinema::cop_stmap_aov::3.0
 Nuke-ready STMap using libcinema_optics.h distortion model.
 
 Executed through Synapse bridge in a live Houdini session.
@@ -63,7 +63,7 @@ B = 0.0;
 
 def build_cop_stmap_aov_hda(
     save_dir: str = None,
-    hda_name: str = "cinema_cop_stmap_aov_1.0.hda",
+    hda_name: str = "cinema_cop_stmap_aov_3.0.hda",
 ) -> str:
     """
     Build the COP STMap AOV HDA and save to disk.
@@ -72,8 +72,13 @@ def build_cop_stmap_aov_hda(
     import hou
 
     if save_dir is None:
-        cinema_path = os.environ.get("CINEMA_CAMERA_PATH", "")
-        save_dir = os.path.join(cinema_path, "hda", "post")
+        # v3.0: consolidate into <repo>/otls/ (Houdini auto-scans).
+        repo = os.environ.get("CINEMA_CAMERA_REPO")
+        if repo:
+            save_dir = os.path.join(repo, "otls")
+        else:
+            cinema_path = os.environ.get("CINEMA_CAMERA_PATH", "")
+            save_dir = os.path.join(cinema_path, "hda", "post")
     os.makedirs(save_dir, exist_ok=True)
 
     # ── Create temporary COP network ─────────────────────
@@ -100,13 +105,14 @@ def build_cop_stmap_aov_hda(
 
     # ── Convert subnet to HDA ──────────────────────────────
     hda_path = os.path.join(save_dir, hda_name)
+    # Type name must include ::version explicitly (the `version` kwarg only sets metadata).
     hda_node = sub.createDigitalAsset(
-        name="cinema::cop_stmap_aov",
+        name="cinema::cop_stmap_aov::3.0",
         hda_file_name=hda_path,
         description="Cinema STMap AOV",
         min_num_inputs=0,
         max_num_inputs=1,
-        version="1.0",
+        version="3.0",
     )
     hda_def = hda_node.type().definition()
 

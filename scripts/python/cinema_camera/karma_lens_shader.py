@@ -2,7 +2,7 @@
 Cinema Camera Rig v4.0 -- Karma CVEX Lens Shader Binding
 
 Binds Karma CVEX lens shader parameters to USD camera attributes.
-Runs inside the cinema::camera_rig::2.0 LOP HDA.
+Runs inside the cinema::camera_rig::3.0 LOP HDA.
 
 Pillar D: Shader parameter binding layer.
 """

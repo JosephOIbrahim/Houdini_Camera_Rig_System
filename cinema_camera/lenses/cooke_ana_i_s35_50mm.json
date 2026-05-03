@@ -11,6 +11,7 @@
   "close_focus_m": 0.85,
   "image_circle_mm": 31.1,
   "squeeze_ratio": 2.0,
+  "mount": "PL or LPL",
   "mechanics": {
     "weight_kg": 3.6,
     "length_mm": 205.0,
@@ -26,7 +27,11 @@
       "gear_teeth": 134,
       "gear_module": 0.8
     },
-    "entrance_pupil_offset_mm": 125.0
+    "entrance_pupil_offset_mm": 102.5
+  },
+  "fov_pdf_reference": {
+    "max_horizontal_deg": 50.7,
+    "max_vertical_deg": 21.2
   },
   "squeeze_breathing": [
     {
@@ -34,16 +39,16 @@
       "effective_squeeze": 1.85
     },
     {
-      "focus_m": 1.5,
-      "effective_squeeze": 1.92
+      "focus_m": 1.53,
+      "effective_squeeze": 1.94
     },
     {
-      "focus_m": 3.0,
-      "effective_squeeze": 1.97
+      "focus_m": 3.4,
+      "effective_squeeze": 1.978
     },
     {
-      "focus_m": 10.0,
-      "effective_squeeze": 1.99
+      "focus_m": 10.2,
+      "effective_squeeze": 1.992
     },
     {
       "focus_m": "infinity",
@@ -51,30 +56,58 @@
     }
   ],
   "distortion": {
-    "k1": -0.015,
-    "k2": 0.002,
-    "squeeze_uniformity": 0.94
+    "k1": -0.02,
+    "k2": 0.0025,
+    "k3": 0.0,
+    "p1": 0.0,
+    "p2": 0.0,
+    "squeeze_uniformity": 0.93
   },
   "breathing": [
     {
       "focus_m": 0.85,
-      "fov_shift_pct": 3.2
+      "fov_shift_pct": 4.0
     },
     {
-      "focus_m": 2.0,
-      "fov_shift_pct": 1.1
+      "focus_m": 2.12,
+      "fov_shift_pct": 1.4
     },
     {
       "focus_m": "infinity",
       "fov_shift_pct": 0.0
     }
   ],
-  "squeeze_breathing_fit": {
-    "type": "rational_2_1",
-    "coefficients": {},
-    "python_lambda": "lambda f: (0) / (1)",
-    "r_squared": -1235.9386422976513,
-    "max_residual": 2.0,
-    "wolfram_query": "fit {{0.85, 1.85}, {1.5, 1.92}, {3.0, 1.97}, {10.0, 1.99}, {infinity, 2.0}} to (a0 + a1*f + a2*f^2) / (1 + b1*f)"
+  "_provenance": {
+    "pdf_source": "COOKE_Anamorphic-i-S35_Specification_030623.pdf",
+    "pdf_version": "030623",
+    "pdf_authoritative": [
+      "focal_length_mm",
+      "t_stop_range",
+      "close_focus_m",
+      "image_circle_mm",
+      "squeeze_ratio",
+      "mount",
+      "mechanics.weight_kg",
+      "mechanics.length_mm",
+      "mechanics.front_diameter_mm",
+      "mechanics.filter_thread",
+      "mechanics.focus_ring.rotation_deg",
+      "mechanics.focus_ring.gear_teeth",
+      "mechanics.focus_ring.gear_module",
+      "mechanics.iris_ring.rotation_deg",
+      "mechanics.iris_ring.gear_teeth",
+      "mechanics.iris_ring.gear_module",
+      "fov_pdf_reference.max_horizontal_deg",
+      "fov_pdf_reference.max_vertical_deg"
+    ],
+    "heuristic": {
+      "iris_blades": "industry_standard (cine prime typical: 11)",
+      "mechanics.entrance_pupil_offset_mm": "optical_center (length_mm * 0.5) -- replace via Wolfram W4 fit_pupil_shift",
+      "squeeze_breathing": "focal_scaled (deficit_at_MOD = 0.15 * sqrt(50/focal), clamped [0.05, 0.20]) -- replace via Wolfram W2-W3 fit_squeeze_breathing",
+      "breathing": "focal_scaled (shift_at_MOD pct = 4.0 * sqrt(50/focal), clamped [0.5, 5.0])",
+      "distortion.k1": "focal_scaled (-0.020 * sqrt(50/focal))",
+      "distortion.k2": "focal_scaled (0.0025 * (50/focal))",
+      "distortion.squeeze_uniformity": "focal_scaled (0.92 + 0.0002*focal, clamped [0.92, 0.97])"
+    }
   }
 }
