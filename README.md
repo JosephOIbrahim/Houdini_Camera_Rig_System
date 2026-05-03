@@ -17,34 +17,97 @@ Authors USD camera rigs, binds Karma CVEX lens shaders, applies fluid-head biome
 
 ---
 
-## Quick install
+## Install — for SideFX Houdini 21 users
 
-From any PowerShell prompt:
+### Prerequisites
+
+- **SideFX Houdini 21.0** or newer (tested on `21.0.671` Apprentice / Indie / FX)
+- **Windows 10/11** with PowerShell 5.1+ or PowerShell 7+ (`pwsh`)
+- **Git** for the clone step
+- *Recommended:* **Windows Developer Mode** enabled (Settings → Privacy & Security → For developers → Developer Mode = On). The installer prefers `SymbolicLink` over file copy when Developer Mode is on, which means future repo edits to the package descriptor hot-reload into Houdini with no re-install step.
+
+### Step 1 — Clone the repo
 
 ```powershell
-git clone https://github.com/JosephOIbrahim/Houdini_Camera_Rig_System.git C:\Users\You\Houdini_Camera_Rig_System
-cd C:\Users\You\Houdini_Camera_Rig_System
+git clone https://github.com/JosephOIbrahim/Houdini_Camera_Rig_System.git C:\Houdini_Camera_Rig_System
+cd C:\Houdini_Camera_Rig_System
+```
+
+You can clone anywhere; the installer detects the path automatically. Replace `C:\Houdini_Camera_Rig_System` with whatever location you prefer in the rest of the commands.
+
+### Step 2 — Run the override-package installer
+
+```powershell
 .\scripts\install_package.ps1
 ```
 
-Then **restart Houdini** and verify in the Python shell:
+The installer:
+
+- Auto-detects your Houdini packages dir(s) — checks `~/houdini21.0/packages/` and the OneDrive-mirrored `~/OneDrive/Documents/houdini21.0/packages/`.
+- Backs up any existing `cinema_camera_rig.json` to `cinema_camera_rig.json.bak.<timestamp>`.
+- Symlinks (or copies, with a warning) `packages/cinema_camera_rig.json` and `packages/cinema_camera_rig.local.json` into each detected packages dir.
+- The package descriptor sets `path: $CINEMA_CAMERA_REPO`, which makes Houdini auto-prepend `<repo>/otls/`, `<repo>/vex/include/`, and `<repo>/scripts/python/` to `HOUDINI_PATH` at startup.
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `-ForceCopy` | Copy instead of symlink (use if symlinks fail and you don't want to enable Dev Mode). Trade-off: edits to the repo's package json won't auto-propagate. |
+| `-Targets <path>[,<path>...]` | Install only into the specified package dir(s). |
+| `-Uninstall` | Remove the installed files and restore the most recent `.bak` backup. Reversible. |
+
+### Step 3 — Restart Houdini
+
+Houdini parses the package descriptors at startup. After restarting, open the **Python Shell** (Windows → Python Shell) and verify:
 
 ```python
-import os; print(os.environ.get("CINEMA_CAMERA_REPO"))
-# -> C:\Users\You\Houdini_Camera_Rig_System
+import os
+print(os.environ.get("CINEMA_CAMERA_REPO"))
+# -> C:\Houdini_Camera_Rig_System
 ```
 
-The 6 v3.0 HDAs ship pre-built in `otls/`. To rebuild from source after editing builders:
+If the value is `None`, Houdini didn't load the package — most commonly because Houdini was already running when the installer ran. Restart it.
+
+### Step 4 — Drop the rig into a Solaris stage
+
+In any LOP context (the default `/stage`):
+
+1. **Tab → Cinema Camera Rig LOP** — creates `cinema::camera_rig_lop::3.0`.
+2. Look at the **Lens** tab — the `Lens ID`, focal length, T-stop, focus, and squeeze parms are wired.
+3. Try a focal length that didn't exist before this release: change `Lens ID` to `cooke_ana_i_s35_25mm` or `cooke_ana_i_s35_180mm` and update the focal length to match.
+4. The 6 HDAs ship pre-built in `<repo>/otls/`, so no rebuild is needed for first use.
+
+### Step 5 (optional) — End-to-end verification
 
 ```python
-exec(open(r"C:\Users\You\Houdini_Camera_Rig_System\scripts\bootstrap_v3_build.py").read())
+exec(open(r"C:\Houdini_Camera_Rig_System\scripts\verify_v3.py").read())
 ```
 
-To verify the full system end-to-end (instantiates test rigs, checks USD prims, sub-HDA wiring, biomech metadata, lens loading):
+Expected: ~25 `[PASS]` lines covering operator-type registration, sub-HDA wiring (`::3.0` resolution), USD prim authoring, biomechanics metadata + time samples, and lens-registry loading. The script leaves three test nodes (`/obj/__verify_v3_obj`, `/stage/__verify_v3_lop`, `/stage/__verify_v3_biomech`) for manual inspection — destroy them when done.
+
+### Step 6 (optional) — Rebuild HDAs from source
+
+If you edit any builder under `scripts/python/cinema_camera/builders/`, paste this into the Houdini Python shell. It uninstalls the old HDA registrations, force-loads the repo's `cinema_camera/`, and rebuilds + reinstalls all 6 HDAs:
 
 ```python
-exec(open(r"C:\Users\You\Houdini_Camera_Rig_System\scripts\verify_v3.py").read())
+exec(open(r"C:\Houdini_Camera_Rig_System\scripts\bootstrap_v3_build.py").read())
 ```
+
+Or rebuild out-of-process via Synapse (Synapse server must be running on `:9999`):
+
+```bash
+python C:\Houdini_Camera_Rig_System\scripts\python\cinema_camera\builders\_rebuild_all_hdas.py
+```
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `CINEMA_CAMERA_REPO` is `None` after Houdini restart | Re-run installer; confirm `~/houdini21.0/packages/cinema_camera_rig.json` exists and resolves (target file present). |
+| `ModuleNotFoundError: cinema_camera.builders.build_all` | A pre-existing `~/houdini21.0/scripts/python/cinema_camera/` is shadowing the repo. Run `bootstrap_v3_build.py` (handles this automatically), or rename the shadow: `os.rename(r"C:\Users\You\houdini21.0\scripts\python\cinema_camera", r"C:\Users\You\houdini21.0\scripts\python\cinema_camera_legacy")`. |
+| Symlink creation fails during install | Enable Windows Developer Mode (no admin needed) or re-run with `.\scripts\install_package.ps1 -ForceCopy`. |
+| `Tab > Cinema Camera Rig LOP` not in menu | Confirm `<repo>/otls/cinema_camera_rig_lop_3.0.hda` exists and is loaded: `print([f for f in hou.hda.loadedFiles() if "Camera_Rig_System" in f])` should show six entries. If empty, restart Houdini. |
+| Want Wolfram-fitted lens curves | Edit `packages/cinema_camera_rig.local.json` and put your App ID in `WOLFRAM_APP_ID` (get one free at https://account.wolfram.com/me/apps). The fit pipeline currently has an asyncio bug — see roadmap. |
 
 ---
 
@@ -250,6 +313,6 @@ The `cinema::camera_rig::3.0` OBJ orchestrator is **deprecated** — it predates
 
 ## License
 
-Proprietary — Joseph Ibrahim, all rights reserved.
+MIT — see [`LICENSE`](LICENSE). Copyright © 2026 Joseph Ibrahim.
 
 For the agent-team handoff document and detailed Synapse protocol notes, see [`cinema_camera/CLAUDE.md`](cinema_camera/CLAUDE.md).

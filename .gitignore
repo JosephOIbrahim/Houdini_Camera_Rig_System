@@ -23,6 +23,7 @@
 !scripts/verify_v3.py
 !.gitattributes
 !README.md
+!LICENSE
 
 # Secrets: cinema_camera_rig.local.json holds WOLFRAM_APP_ID and other secrets;
 # never commit it. The .example template above shows the schema.
