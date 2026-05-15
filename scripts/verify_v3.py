@@ -135,6 +135,19 @@ if instance:
     else:
         _bad("show_nodal_guide toggle parm missing")
 
+    # v3.3 artist-friendly parms
+    for parm_name, descr in (
+        ("camera_preset",            "Preset tab camera dropdown"),
+        ("focal_length_preset",      "Lens common-prime menu"),
+        ("shutter_angle_deg",        "Lens shutter angle"),
+        ("show_advanced_distortion", "Distortion advanced toggle"),
+        ("handheld_style",           "Biomech handheld style menu"),
+    ):
+        if instance.parm(parm_name) is not None:
+            _ok(f"artist parm {parm_name} present ({descr})")
+        else:
+            _bad(f"artist parm {parm_name} MISSING ({descr})")
+
     # Cook
     try:
         instance.cook(force=True)

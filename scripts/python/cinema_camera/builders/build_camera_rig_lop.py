@@ -46,6 +46,7 @@ _SCRIPT_BUILD_RIG = textwrap.dedent("""\
     sensor_height_mm = hda.evalParm("sensor_height_mm")
     resolution_x = hda.evalParm("resolution_x")
     resolution_y = hda.evalParm("resolution_y")
+    shutter_angle_deg = hda.evalParm("shutter_angle_deg") or 180.0
     squeeze_ratio = hda.evalParm("squeeze_ratio")
     effective_squeeze = hda.evalParm("effective_squeeze")
     entrance_pupil_offset_mm = hda.evalParm("entrance_pupil_offset_mm")
@@ -163,6 +164,13 @@ _SCRIPT_BUILD_RIG = textwrap.dedent("""\
     _set_attr(sensor_prim, "cinema:camera:exposureIndex", Sdf.ValueTypeNames.Int, exposure_index)
     _set_attr(sensor_prim, "cinema:camera:resolutionX", Sdf.ValueTypeNames.Int, resolution_x)
     _set_attr(sensor_prim, "cinema:camera:resolutionY", Sdf.ValueTypeNames.Int, resolution_y)
+    _set_attr(sensor_prim, "cinema:camera:shutterAngleDeg", Sdf.ValueTypeNames.Float, shutter_angle_deg)
+
+    # USD's shutter:open/close are in fractional frames around the sample time.
+    # shutter_open = 0 (always at sample start), shutter_close = angle/360.
+    shutter_close = shutter_angle_deg / 360.0
+    camera.CreateShutterOpenAttr().Set(0.0)
+    camera.CreateShutterCloseAttr().Set(float(shutter_close))
 
     # ── Entrance Pupil guide Xform ───────────────────────
     pupil_path = sensor_path + "/EntrancePupil"

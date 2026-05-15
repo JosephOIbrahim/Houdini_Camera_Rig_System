@@ -439,6 +439,7 @@ The OBJ orchestrator (`cinema::camera_rig::3.0`) is no longer treated as depreca
 
 | Version | Notes |
 |---|---|
+| v3.3 | Artist-friendly parm UX: Common-prime focal length dropdown on Lens tab; Shutter Angle (deg) wired to cam shutter + USD shutterOpen/Close; "Show Advanced (Brown-Conrady)" toggle hides raw K1-P2 distortion coefficients on the Distortion tab; Handheld Style menu (Tripod / Steadicam / Operator / Handheld / Verite) on Biomechanics tab with auto-fill callback; spring/damping/lag/shake parms now hide when Auto-Derive is on. |
 | v3.2 | Six 2026 professional camera body presets (ARRI ALEXA 35 / Mini LF / 65, Sony VENICE 2, RED V-RAPTOR 8K VV, Blackmagic URSA Cine 12K LF); Cooke Anamorphic/i Full Frame Plus (FF+) skeleton lens family; "Preset" tab at front of HDA parm panel with single-click Apply |
 | v3.1 | Copernicus 2.0 preview satellites shipping; unified CineCamera UX (camera frustum on load, Look Through button, toggleable nodal guide); single-paste `rebuild_and_verify.py` driver; 38-assertion verify suite |
 | v3.0 | Repo-authoritative override; PDF-grounded Cooke lineup; Solaris-native LOP rig with biomechanics; HDA type-name versioning fix |

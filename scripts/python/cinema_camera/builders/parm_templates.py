@@ -195,21 +195,71 @@ def build_camera_rig_parm_templates():
         "lens_tab", "Lens",
         folder_type=hou.folderType.Tabs,
     )
+    # Common cinema prime focal lengths (Cooke + industry standard). Picking
+    # one auto-fills focal_length_mm. The free slider below remains for
+    # fine-tuning between primes or for non-standard focal lengths.
+    _FOCAL_PRESET_CB = (
+        "import hou\n"
+        "n = kwargs.get('node')\n"
+        "if n is None:\n"
+        "    return\n"
+        "val = n.parm('focal_length_preset').evalAsString()\n"
+        "if val == 'custom':\n"
+        "    return\n"
+        "try:\n"
+        "    f = float(val)\n"
+        "except ValueError:\n"
+        "    return\n"
+        "p = n.parm('focal_length_mm')\n"
+        "if p is not None:\n"
+        "    p.set(f)\n"
+    )
+    lens_folder.addParmTemplate(hou.MenuParmTemplate(
+        "focal_length_preset", "Common Prime",
+        menu_items=(
+            "custom", "18", "21", "25", "32", "35", "40", "50", "65",
+            "75", "85", "100", "135", "180", "200", "300",
+        ),
+        menu_labels=(
+            "Custom (use slider below)",
+            "18mm (ultra-wide)", "21mm (wide)", "25mm (wide)", "32mm",
+            "35mm", "40mm", "50mm (normal)", "65mm",
+            "75mm", "85mm", "100mm (portrait)", "135mm",
+            "180mm (tele)", "200mm (tele)", "300mm (long tele)",
+        ),
+        default_value=7,   # 50mm
+        script_callback=_FOCAL_PRESET_CB,
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Pick from common cinema prime focal lengths -- auto-fills the "
+             "Focal Length (mm) slider below. Choose 'Custom' to use the "
+             "free slider directly.",
+    ))
     lens_folder.addParmTemplate(hou.StringParmTemplate(
         "lens_id", "Lens ID", 1,
         default_value=("cooke_ana_i_s35_50mm",),
-        help="Lens identifier from registry. Used to load LensSpec JSON.",
+        help="Lens identifier from registry. Used to load LensSpec JSON. "
+             "Auto-filled by the Preset tab; manual edits override.",
     ))
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "focal_length_mm", "Focal Length (mm)", 1,
         default_value=(50.0,), min=8.0, max=600.0,
-        help="Read from LensSpec. Drives camera aperture.",
+        help="Lens focal length in millimeters. Drives camera aperture and FOV. "
+             "Common cinema primes: 25, 32, 50, 75, 100, 135 mm.",
     ))
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "t_stop", "T-Stop", 1,
         default_value=(2.8,), min=1.0, max=22.0,
-        help="T-stop = f-stop / lens transmission. Lower = more light. "
-             "Unlike f-stop, T-stop accounts for light lost in glass elements.",
+        help="T-stop = f-stop / lens transmission. Lower = more light, shallower DOF. "
+             "Unlike f-stop, T-stop accounts for light lost in glass elements. "
+             "Cooke anamorphic primes: T2.3 wide-open, T22 stopped down.",
+    ))
+    lens_folder.addParmTemplate(hou.FloatParmTemplate(
+        "shutter_angle_deg", "Shutter Angle (deg)", 1,
+        default_value=(180.0,), min=1.0, max=360.0,
+        help="Camera shutter angle. Cinema standard is 180 degrees (1/48s "
+             "exposure at 24fps). 90 = sharper motion (Saving Private Ryan), "
+             "270-360 = motion-blurred (dream/dance sequences). Drives motion "
+             "blur and the cinema:camera:shutterAngleDeg USD attribute.",
     ))
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "focus_distance_m", "Focus Distance (m)", 1,
@@ -245,10 +295,41 @@ def build_camera_rig_parm_templates():
     # ═══════════════════════════════════════════════════════
     # TAB 2: DISTORTION
     # ═══════════════════════════════════════════════════════
+    # Artist-friendly: by default the raw Brown-Conrady coefficients (K1-P2)
+    # are hidden behind "Show Advanced". Most artists work with the lens-spec
+    # values auto-loaded from the lens_id; only TDs / pre-vis-to-comp pipelines
+    # need to hand-edit coefficients.
     dist_folder = hou.FolderParmTemplate(
         "distortion_tab", "Distortion",
         folder_type=hou.folderType.Tabs,
     )
+
+    dist_folder.addParmTemplate(hou.LabelParmTemplate(
+        "label_distortion",
+        "Distortion values are auto-loaded from the lens spec (lens_id). "
+        "Use Squeeze Uniformity for anamorphic edge falloff -- the most "
+        "common artist-facing tweak. Enable 'Show Advanced' below to edit "
+        "raw Brown-Conrady coefficients directly.",
+    ))
+
+    dist_folder.addParmTemplate(hou.FloatParmTemplate(
+        "dist_sq_uniformity", "Squeeze Uniformity", 1,
+        default_value=(1.0,), min=0.8, max=1.0,
+        help="Anamorphic squeeze uniformity across the field. 1.0 = perfectly "
+             "uniform squeeze (modern Cooke). 0.92-0.97 = vintage anamorphic "
+             "with squeeze falloff toward edges -- the 'oval bokeh' look.",
+    ))
+
+    dist_folder.addParmTemplate(hou.SeparatorParmTemplate("sep_dist_advanced"))
+
+    dist_folder.addParmTemplate(hou.ToggleParmTemplate(
+        "show_advanced_distortion", "Show Advanced (Brown-Conrady)",
+        default_value=False,
+        help="Reveal raw Brown-Conrady distortion coefficients (K1, K2, K3, "
+             "P1, P2). Normally auto-loaded from the lens spec; expose for "
+             "manual override during plate-matching or pre-vis-to-comp work.",
+    ))
+
     for parm_name, label, default, parm_help in [
         ("dist_k1", "K1 (Radial)", 0.0,
          "2nd-order radial distortion. Positive = barrel (edges bow out), "
@@ -265,16 +346,17 @@ def build_camera_rig_parm_templates():
         ("dist_p2", "P2 (Tangential)", 0.0,
          "Vertical tangential distortion from lens element decentering. "
          "Causes asymmetric shift. Usually very small on modern lenses."),
-        ("dist_sq_uniformity", "Squeeze Uniformity", 1.0,
-         "Anamorphic squeeze uniformity across the field. 1.0 = perfectly "
-         "uniform squeeze. <1.0 = squeeze falls off toward edges (horizontal "
-         "vs vertical stretching differs at periphery)."),
     ]:
-        dist_folder.addParmTemplate(hou.FloatParmTemplate(
+        pt = hou.FloatParmTemplate(
             parm_name, label, 1,
             default_value=(default,),
             help=parm_help,
-        ))
+        )
+        pt.setConditional(
+            hou.parmCondType.HideWhen,
+            "{ show_advanced_distortion == 0 }",
+        )
+        dist_folder.addParmTemplate(pt)
     folders.append(dist_folder)
 
     # ═══════════════════════════════════════════════════════
@@ -356,24 +438,45 @@ def build_camera_rig_parm_templates():
         help="Distance from fluid head pivot to camera CG in cm. "
              "Longer arms (big lenses) increase rotational inertia and lag.",
     ))
-    bio_folder.addParmTemplate(hou.FloatParmTemplate(
+    # auto_derive moved BEFORE the manual parms so it's the first decision.
+    # When True (default), manual spring/damping/lag/shake parms hide --
+    # they're computed automatically from combined_weight_kg. Toggle off to
+    # reveal them for manual override.
+    bio_folder.addParmTemplate(hou.ToggleParmTemplate(
+        "auto_derive", "Auto-Derive from Rig Weight",
+        default_value=True,
+        help="Compute spring constant, damping, lag, and handheld shake from "
+             "combined_weight_kg using physically-grounded formulas. "
+             "Turn off to reveal manual sliders for spring/damping/lag/shake.",
+    ))
+
+    _spring_pt = hou.FloatParmTemplate(
         "spring_constant", "Spring Constant", 1,
         default_value=(15.0,), min=1.0, max=30.0,
         help="Fluid head spring stiffness. Higher = snappier pan/tilt response. "
-             "Lower = mushier, more cinematic drift. Auto-derived from weight.",
-    ))
-    bio_folder.addParmTemplate(hou.FloatParmTemplate(
+             "Lower = mushier, more cinematic drift.",
+    )
+    _spring_pt.setConditional(hou.parmCondType.HideWhen, "{ auto_derive == 1 }")
+    bio_folder.addParmTemplate(_spring_pt)
+
+    _damping_pt = hou.FloatParmTemplate(
         "damping_ratio", "Damping Ratio", 1,
         default_value=(0.5,), min=0.0, max=1.0,
         help="Fluid head damping. 0 = undamped (oscillates), 1 = critically "
              "damped (no overshoot). Typical fluid heads: 0.4-0.7.",
-    ))
-    bio_folder.addParmTemplate(hou.FloatParmTemplate(
+    )
+    _damping_pt.setConditional(hou.parmCondType.HideWhen, "{ auto_derive == 1 }")
+    bio_folder.addParmTemplate(_damping_pt)
+
+    _lag_pt = hou.FloatParmTemplate(
         "lag_frames", "Lag (frames)", 1,
         default_value=(2.25,), min=0.0, max=10.0,
         help="Operator reaction delay in frames. Heavier rigs have more lag. "
              "Simulates the human response time when following action.",
-    ))
+    )
+    _lag_pt.setConditional(hou.parmCondType.HideWhen, "{ auto_derive == 1 }")
+    bio_folder.addParmTemplate(_lag_pt)
+
     bio_folder.addParmTemplate(hou.SeparatorParmTemplate("sep_handheld"))
     bio_folder.addParmTemplate(hou.LabelParmTemplate(
         "label_handheld", "Handheld Shake",
@@ -381,26 +484,78 @@ def build_camera_rig_parm_templates():
     bio_folder.addParmTemplate(hou.ToggleParmTemplate(
         "enable_handheld", "Enable Handheld Shake",
         default_value=False,
-        help="Add procedural handheld camera shake. Amplitude and frequency "
-             "are derived from rig weight when auto-derive is on.",
+        help="Add procedural handheld camera shake on top of any spring/lag "
+             "filtering. Picks a style preset below or set amplitude/frequency "
+             "manually (only visible when Auto-Derive is off).",
     ))
-    bio_folder.addParmTemplate(hou.FloatParmTemplate(
+
+    # Handheld style preset menu: choose a shooting style, click Apply, and
+    # shake_amplitude_deg + shake_frequency_hz get filled with industry-typical
+    # values. Custom = leave the sliders alone for hand-tuning.
+    _HANDHELD_STYLE_CB = (
+        "import hou\n"
+        "n = kwargs.get('node')\n"
+        "if n is None:\n"
+        "    return\n"
+        "style = n.parm('handheld_style').evalAsString()\n"
+        "presets = {\n"
+        "    'custom':     None,\n"
+        "    'tripod':     (0.05, 3.0),\n"
+        "    'steadicam':  (0.10, 4.0),\n"
+        "    'operator':   (0.20, 5.5),\n"
+        "    'handheld':   (0.40, 6.5),\n"
+        "    'verite':     (0.80, 8.0),\n"
+        "}\n"
+        "vals = presets.get(style)\n"
+        "if vals is None:\n"
+        "    return\n"
+        "amp, freq = vals\n"
+        "amp_p  = n.parm('shake_amplitude_deg')\n"
+        "freq_p = n.parm('shake_frequency_hz')\n"
+        "if amp_p is not None:\n"
+        "    amp_p.set(amp)\n"
+        "if freq_p is not None:\n"
+        "    freq_p.set(freq)\n"
+        "en_p = n.parm('enable_handheld')\n"
+        "if en_p is not None and style != 'custom':\n"
+        "    en_p.set(True)\n"
+    )
+    bio_folder.addParmTemplate(hou.MenuParmTemplate(
+        "handheld_style", "Handheld Style",
+        menu_items=("custom", "tripod", "steadicam", "operator", "handheld", "verite"),
+        menu_labels=(
+            "Custom (set sliders manually)",
+            "Tripod (locked-off, ~0.05deg / 3Hz)",
+            "Steadicam (smooth float, ~0.10deg / 4Hz)",
+            "Operator (pro handheld, ~0.20deg / 5.5Hz)",
+            "Handheld (typical handheld, ~0.40deg / 6.5Hz)",
+            "Verite (agitated documentary, ~0.80deg / 8Hz)",
+        ),
+        default_value=3,  # "operator" -- pro handheld baseline
+        script_callback=_HANDHELD_STYLE_CB,
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Pick a handheld shooting style -- fills shake amplitude + "
+             "frequency below. Choose Custom to set sliders manually. "
+             "Selecting a non-Custom style also flips Enable Handheld on.",
+    ))
+
+    _shake_amp_pt = hou.FloatParmTemplate(
         "shake_amplitude_deg", "Shake Amplitude (deg)", 1,
         default_value=(0.2,), min=0.0, max=2.0,
         help="Peak random rotation in degrees. Lighter rigs shake more. "
              "0.1-0.3 = subtle handheld, 0.5+ = agitated/run-and-gun.",
-    ))
-    bio_folder.addParmTemplate(hou.FloatParmTemplate(
+    )
+    _shake_amp_pt.setConditional(hou.parmCondType.HideWhen, "{ auto_derive == 1 }")
+    bio_folder.addParmTemplate(_shake_amp_pt)
+
+    _shake_freq_pt = hou.FloatParmTemplate(
         "shake_frequency_hz", "Shake Frequency (Hz)", 1,
         default_value=(5.5,), min=1.0, max=15.0,
         help="Dominant shake frequency in Hz. Human handheld typically 4-7 Hz. "
              "Lower = slow sway, higher = jittery vibration.",
-    ))
-    bio_folder.addParmTemplate(hou.ToggleParmTemplate(
-        "auto_derive", "Auto Derive from Weight",
-        default_value=True,
-        help="Auto-compute spring/damping/lag from combined weight.",
-    ))
+    )
+    _shake_freq_pt.setConditional(hou.parmCondType.HideWhen, "{ auto_derive == 1 }")
+    bio_folder.addParmTemplate(_shake_freq_pt)
     folders.append(bio_folder)
 
     # ═══════════════════════════════════════════════════════

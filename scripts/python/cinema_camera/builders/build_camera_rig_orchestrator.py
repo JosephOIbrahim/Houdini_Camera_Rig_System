@@ -223,6 +223,12 @@ def build_camera_rig_orchestrator_hda(
         cam_node.parm("aperture").setExpression('ch("../sensor_width_mm")')
         cam_node.parm("resx").setExpression('ch("../resolution_x")')
         cam_node.parm("resy").setExpression('ch("../resolution_y")')
+        # Houdini cam shutter is a 0-1 fraction; convert from degrees:
+        # shutter = shutter_angle_deg / 360
+        if cam_node.parm("shutter") is not None:
+            cam_node.parm("shutter").setExpression(
+                'ch("../shutter_angle_deg") / 360.0'
+            )
 
     # Wire entrance pupil offset to pivot null
     pivot_node = hda_node.node("entrance_pupil_pivot")
