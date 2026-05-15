@@ -21,6 +21,8 @@
 !scripts/install_package.ps1
 !scripts/bootstrap_v3_build.py
 !scripts/verify_v3.py
+!scripts/probe_copernicus.py
+!scripts/rebuild_and_verify.py
 !.gitattributes
 !README.md
 !LICENSE

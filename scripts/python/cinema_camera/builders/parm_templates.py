@@ -21,6 +21,54 @@ def build_camera_rig_parm_templates():
     """
     import hou
 
+    # ═══════════════════════════════════════════════════════
+    # TOP-LEVEL CONTROLS (sit above the tab folders)
+    # ═══════════════════════════════════════════════════════
+    # Python callback that drives "Look Through Camera" for both OBJ and LOP
+    # HDAs. The callback inspects its host node's category to pick the right
+    # camera target: an inner cam node in /obj, or a USD camera prim in /stage.
+    _look_through_cb = (
+        "import hou\n"
+        "n = kwargs.get('node')\n"
+        "if n is None:\n"
+        "    return\n"
+        "sv = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)\n"
+        "if sv is None:\n"
+        "    return\n"
+        "vp = sv.curViewport()\n"
+        "cat = n.type().category().name()\n"
+        "if cat == 'Object':\n"
+        "    inner = n.node('cinema_camera')\n"
+        "    if inner is not None:\n"
+        "        vp.setCamera(inner)\n"
+        "elif cat == 'Lop':\n"
+        "    rig = n.evalParm('usd_camera_path') or '/CinemaRig'\n"
+        "    if rig == '/CinemaRig/Camera':\n"
+        "        rig = '/CinemaRig'\n"
+        "    sv.setPwd(n)\n"
+        "    vp.setCamera(rig + '/FluidHead/Body/Sensor')\n"
+    )
+
+    look_through = hou.ButtonParmTemplate(
+        "look_through_camera", "Look Through Camera",
+        script_callback=_look_through_cb,
+        script_callback_language=hou.scriptLanguage.Python,
+        join_with_next=True,
+        help="Lock the active SceneViewer to this rig's camera. Works in /obj "
+             "(inner cinema_camera) and /stage (USD camera prim).",
+    )
+
+    show_nodal_guide = hou.ToggleParmTemplate(
+        "show_nodal_guide", "Show Nodal Point Guide",
+        default_value=False,
+        help="Draw the small yellow-orange ring at the entrance pupil "
+             "(nodal point) for parallax-correct pan setup. /obj rig only -- "
+             "the LOP rig uses a USD guide-purpose Xform that Solaris "
+             "controls separately via the viewport Guide-purpose toggle.",
+    )
+
+    top_level = [look_through, show_nodal_guide]
+
     folders = []
 
     # ═══════════════════════════════════════════════════════
@@ -317,4 +365,4 @@ def build_camera_rig_parm_templates():
     ))
     folders.append(meta_folder)
 
-    return folders
+    return top_level + folders

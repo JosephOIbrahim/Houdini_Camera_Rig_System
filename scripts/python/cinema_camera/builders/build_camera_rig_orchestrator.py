@@ -61,6 +61,11 @@ def build_camera_rig_orchestrator_hda(
     cam.parm("far").set(100000)
     cam.setComment("Cinema Camera\nDriven by LensSpec + CameraState")
     cam.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    # Make the camera the displayed + renderable child of the wrapper subnet.
+    # Without this, the viewport draws whatever else has Display=ON (the
+    # entrance pupil null), and the rig "looks like a circle, not a camera".
+    cam.setGenericFlag(hou.nodeFlag.Display, True)
+    cam.setGenericFlag(hou.nodeFlag.Render, True)
 
     # ── 3. Null: Entrance Pupil Pivot ────────────────────
     # This null offsets the camera pivot to the entrance pupil
@@ -77,7 +82,13 @@ def build_camera_rig_orchestrator_hda(
     pupil_pivot.parm("dcolorr").set(1.0)
     pupil_pivot.parm("dcolorg").set(0.8)
     pupil_pivot.parm("dcolorb").set(0.0)  # Yellow-orange for visibility
-    pupil_pivot.setGenericFlag(hou.nodeFlag.Display, True)
+    # Smaller default radius -- 5cm guide ring, not a meter-wide hoop.
+    if pupil_pivot.parm("geoscale") is not None:
+        pupil_pivot.parm("geoscale").set(0.05)
+    # Display is driven by the top-level "show_nodal_guide" toggle (wired
+    # after HDA parms are appended, step 10b). Default OFF: the camera frustum
+    # is the only thing the user sees on instantiation.
+    pupil_pivot.setGenericFlag(hou.nodeFlag.Display, False)
 
     # ── 4. Null: Fluid Head Mount ────────────────────────
     # This is the attachment point for CHOPs biomechanics output
@@ -220,6 +231,9 @@ def build_camera_rig_orchestrator_hda(
         pivot_node.parm("tz").setExpression(
             '-ch("../entrance_pupil_offset_mm") / 10.0'
         )
+        # Drive Display state from the top-level "show_nodal_guide" toggle.
+        # Hidden by default; user enables for parallax-correct pan setup.
+        pivot_node.parm("display").setExpression('ch("../show_nodal_guide")')
 
     # ── 10b. Wire sub-HDA parameters to orchestrator ─────
     # Relative path from sub-HDA (2 levels deep) to orchestrator: ../../parm_name
@@ -300,11 +314,14 @@ def build_camera_rig_orchestrator_hda(
     )
     hda_def.setExtraInfo(
         "Cinema Camera Rig v4.0 (HDA v3.0)\n"
-        "Sub-HDAs: chops_biomechanics, cop_anamorphic_flare, "
+        "Sub-HDAs (cop2 category): chops_biomechanics, cop_anamorphic_flare, "
         "cop_sensor_noise, cop_stmap_aov\n"
-        "Pillars: A (MechanicalSpec), B (Nodal Parallax), "
-        "C (Biomechanics), D (CVEX Lens Shader), "
-        "E (Pipeline Bridge), F (Dynamic Mumps), G (Copernicus 2.0)"
+        "Pillars wired in this orchestrator: A (MechanicalSpec), B (Nodal Parallax), "
+        "C (Biomechanics), D (CVEX Lens Shader), E (Pipeline Bridge), "
+        "F (Dynamic Mumps).\n"
+        "Pillar G (Copernicus 2.0) lives in the cinema::flare::3.0 / "
+        "sensor_noise::3.0 / stmap_aov::3.0 preview HDAs and is NOT wired into "
+        "this orchestrator yet -- those are standalone for now."
     )
 
     # ── 12. Push instance state into definition & save ───

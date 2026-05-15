@@ -11,13 +11,17 @@ Or paste-and-run:
     exec(open(r"C:\\Users\\User\\Houdini_Camera_Rig_System\\scripts\\python\\cinema_camera\\builders\\build_all.py").read())
     build_all_v3()
 
-Build order (satellites before orchestrators):
+Build order (legacy satellites first, Copernicus 2.0 preview satellites next,
+orchestrators last; only the LEGACY satellites are consumed by the orchestrator):
     1. cinema::chops_biomechanics::3.0
-    2. cinema::cop_anamorphic_flare::3.0
-    3. cinema::cop_sensor_noise::3.0
-    4. cinema::cop_stmap_aov::3.0
-    5. cinema::camera_rig_lop::3.0
-    6. cinema::camera_rig::3.0           (orchestrator -- references 1-4)
+    2. cinema::cop_anamorphic_flare::3.0    (cop2, consumed by orchestrator)
+    3. cinema::cop_sensor_noise::3.0        (cop2, consumed by orchestrator)
+    4. cinema::cop_stmap_aov::3.0           (cop2, consumed by orchestrator)
+    5. cinema::flare::3.0                   (Copernicus 2.0 preview, INDEPENDENT)
+    6. cinema::sensor_noise::3.0            (Copernicus 2.0 preview, INDEPENDENT)
+    7. cinema::stmap_aov::3.0               (Copernicus 2.0 preview, INDEPENDENT)
+    8. cinema::camera_rig_lop::3.0
+    9. cinema::camera_rig::3.0              (orchestrator -- references 1-4)
 
 All HDAs save to $CINEMA_CAMERA_REPO/otls/ and auto-install in the live session.
 """
@@ -63,14 +67,23 @@ def build_all_v3(force_reimport: bool = True) -> dict:
     from cinema_camera.builders.build_cop_anamorphic_flare    import build_cop_anamorphic_flare_hda
     from cinema_camera.builders.build_cop_sensor_noise        import build_cop_sensor_noise_hda
     from cinema_camera.builders.build_cop_stmap_aov           import build_cop_stmap_aov_hda
+    from cinema_camera.builders.build_cop_flare_v2            import build_cop_flare_v2_hda
+    from cinema_camera.builders.build_cop_sensor_noise_v2     import build_cop_sensor_noise_v2_hda
+    from cinema_camera.builders.build_cop_stmap_aov_v2        import build_cop_stmap_aov_v2_hda
     from cinema_camera.builders.build_camera_rig_lop          import build_camera_rig_lop_hda
     from cinema_camera.builders.build_camera_rig_orchestrator import build_camera_rig_orchestrator_hda
 
     plan = [
+        # Legacy cop2 satellites -- full-featured, consumed by the orchestrator
         ("cinema::chops_biomechanics::3.0",     build_chops_biomechanics_hda),
         ("cinema::cop_anamorphic_flare::3.0",   build_cop_anamorphic_flare_hda),
         ("cinema::cop_sensor_noise::3.0",       build_cop_sensor_noise_hda),
         ("cinema::cop_stmap_aov::3.0",          build_cop_stmap_aov_hda),
+        # Copernicus 2.0 preview satellites -- independent of orchestrator (MVP)
+        ("cinema::flare::3.0",                  build_cop_flare_v2_hda),
+        ("cinema::sensor_noise::3.0",           build_cop_sensor_noise_v2_hda),
+        ("cinema::stmap_aov::3.0",              build_cop_stmap_aov_v2_hda),
+        # Orchestrator HDAs (consume the legacy cop2 satellites above)
         ("cinema::camera_rig_lop::3.0",         build_camera_rig_lop_hda),
         ("cinema::camera_rig::3.0",             build_camera_rig_orchestrator_hda),
     ]

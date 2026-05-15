@@ -4,13 +4,18 @@ Rebuild ALL Cinema Camera Rig HDAs (v3.0) via Synapse bridge.
 Usage (from any shell, with Houdini running):
     python _rebuild_all_hdas.py
 
-Build order (satellites before orchestrators, since the orchestrator references them):
-    1. cinema::chops_biomechanics::3.0
-    2. cinema::cop_anamorphic_flare::3.0
-    3. cinema::cop_sensor_noise::3.0
-    4. cinema::cop_stmap_aov::3.0
-    5. cinema::camera_rig_lop::3.0       (LOP-context Solaris-native rig)
-    6. cinema::camera_rig::3.0           (OBJ-context orchestrator wiring 1-4)
+Build order (legacy satellites consumed by the orchestrator first; Copernicus
+2.0 preview satellites are independent and ordered before orchestrators only
+so a single full-rebuild loop is reproducible):
+    1. cinema::chops_biomechanics::3.0          (CHOPs, consumed by orchestrator)
+    2. cinema::cop_anamorphic_flare::3.0        (cop2, consumed by orchestrator)
+    3. cinema::cop_sensor_noise::3.0            (cop2, consumed by orchestrator)
+    4. cinema::cop_stmap_aov::3.0               (cop2, consumed by orchestrator)
+    5. cinema::flare::3.0                       (cop preview, INDEPENDENT)
+    6. cinema::sensor_noise::3.0                (cop preview, INDEPENDENT)
+    7. cinema::stmap_aov::3.0                   (cop preview, INDEPENDENT)
+    8. cinema::camera_rig_lop::3.0              (LOP-context Solaris-native rig)
+    9. cinema::camera_rig::3.0                  (OBJ orchestrator, wires 1-4)
 
 All HDAs land in $CINEMA_CAMERA_REPO/otls/ and are auto-installed in the
 running Houdini session.
@@ -67,10 +72,16 @@ except Exception as e:
 
 # Build sequence: (module, function, operator-name-for-log)
 _BUILD_PLAN = [
+    # Legacy cop2 satellites -- full-featured, consumed by the orchestrator
     ("build_chops_biomechanics",     "build_chops_biomechanics_hda",     "cinema::chops_biomechanics::3.0"),
     ("build_cop_anamorphic_flare",   "build_cop_anamorphic_flare_hda",   "cinema::cop_anamorphic_flare::3.0"),
     ("build_cop_sensor_noise",       "build_cop_sensor_noise_hda",       "cinema::cop_sensor_noise::3.0"),
     ("build_cop_stmap_aov",          "build_cop_stmap_aov_hda",          "cinema::cop_stmap_aov::3.0"),
+    # Copernicus 2.0 preview satellites -- independent of orchestrator (MVP)
+    ("build_cop_flare_v2",           "build_cop_flare_v2_hda",           "cinema::flare::3.0"),
+    ("build_cop_sensor_noise_v2",    "build_cop_sensor_noise_v2_hda",    "cinema::sensor_noise::3.0"),
+    ("build_cop_stmap_aov_v2",       "build_cop_stmap_aov_v2_hda",       "cinema::stmap_aov::3.0"),
+    # Orchestrator HDAs (consume the legacy cop2 satellites above)
     ("build_camera_rig_lop",         "build_camera_rig_lop_hda",         "cinema::camera_rig_lop::3.0"),
     ("build_camera_rig_orchestrator","build_camera_rig_orchestrator_hda","cinema::camera_rig::3.0"),
 ]
@@ -112,7 +123,7 @@ async def main() -> int:
                 for f in failures:
                     print(f"  - {f}")
                 return 1
-            print("RESULT: all 6 HDAs built and installed")
+            print(f"RESULT: all {len(_BUILD_PLAN)} HDAs built and installed")
             print("Restart Houdini or run hou.hda.reloadAllFiles() to refresh tab menu.")
             print("=" * 64)
             return 0

@@ -4,16 +4,18 @@
 
 Authors USD camera rigs, binds Karma CVEX lens shaders, applies fluid-head biomechanics, and post-processes with Copernicus 2.0 — all driven by datasheet-authoritative cinema lens specifications.
 
-> **Status (v3.0):** Override package live. Solaris-native LOP rig with biomechanics filter shipping. 10-prime Cooke Anamorphic/i S35 registry derived directly from the official Cooke datasheet. Copernicus 2.0 post-processing in progress.
+> **Status (v3.0):** Override package live. Solaris-native LOP rig with biomechanics filter shipping. 10-prime Cooke Anamorphic/i S35 registry derived directly from the official Cooke datasheet. Copernicus 2.0 post-processing preview shipping alongside the legacy cop2 stack. Unified CineCamera-style UX on both OBJ and LOP rigs.
 
 ---
 
 ## What's in the box
 
-- **Solaris-native LOP HDA** — `cinema::camera_rig_lop::3.0` authors a full nodal-parallax USD camera rig (`/CinemaRig/FluidHead/Body/Sensor/EntrancePupil`), binds a Karma CVEX lens shader, configures `RenderProduct` + `RenderSettings`, and runs a damped-spring biomechanics filter on the camera transform.
+- **Solaris-native LOP HDA** — `cinema::camera_rig_lop::3.0` authors a full nodal-parallax USD camera rig (`/CinemaRig/FluidHead/Body/Sensor/EntrancePupil`), binds a Karma CVEX lens shader, configures `RenderProduct` + `RenderSettings`, and runs a damped-spring biomechanics filter on the camera transform. Solaris viewport selects the rig as a `UsdGeom.Camera` natively.
+- **OBJ orchestrator HDA** — `cinema::camera_rig::3.0` wraps a `cam` node + biomechanics CHOPs + cop2 post-pipeline into a single subnet HDA. After v3.1 UX work the wrapper now displays a camera frustum on load (not a yellow null), has a `Look Through Camera` button at the top of its parm panel, and exposes the nodal-point guide behind a `Show Nodal Point Guide` toggle.
+- **Copernicus 2.0 preview satellites** — `cinema::flare::3.0`, `cinema::sensor_noise::3.0`, `cinema::stmap_aov::3.0` — MVP ports of the legacy cop2 post-processing to native Copernicus 2.0 (cop category). Independent of the orchestrator for now; full-physics parity is on the roadmap.
 - **10 Cooke Anamorphic/i S35 primes** — 25, 32, 40, 50, 65 Macro, 75, 100, 135, 180, 300mm — generated from PDF-authoritative spec data (datasheet version `030623`). Heuristic fields (entrance pupil offset, mumps curve, distortion) carry `_provenance` annotations marking exactly what to swap for fitted curves.
 - **Override package descriptor** — symlinks into Houdini's `packages/` dir to make this repo authoritative without polluting `~/houdini21.0/scripts/python/`. Hot-reload friendly.
-- **Procedural HDA builders** — pure Python under `scripts/python/cinema_camera/builders/`. Rebuild the entire 6-HDA pipeline from source via in-Houdini one-liner or out-of-process Synapse driver.
+- **Procedural HDA builders** — pure Python under `scripts/python/cinema_camera/builders/`. Rebuild the entire 9-HDA pipeline from source via a one-line `rebuild_and_verify.py` driver, an in-Houdini builder import, or out-of-process Synapse.
 
 ---
 
@@ -68,35 +70,65 @@ print(os.environ.get("CINEMA_CAMERA_REPO"))
 
 If the value is `None`, Houdini didn't load the package — most commonly because Houdini was already running when the installer ran. Restart it.
 
-### Step 4 — Drop the rig into a Solaris stage
+### Step 4 — Drop the rig into a stage
 
-In any LOP context (the default `/stage`):
+**Solaris-native (recommended)** — in `/stage`:
 
 1. **Tab → Cinema Camera Rig LOP** — creates `cinema::camera_rig_lop::3.0`.
-2. Look at the **Lens** tab — the `Lens ID`, focal length, T-stop, focus, and squeeze parms are wired.
-3. Try a focal length that didn't exist before this release: change `Lens ID` to `cooke_ana_i_s35_25mm` or `cooke_ana_i_s35_180mm` and update the focal length to match.
-4. The 6 HDAs ship pre-built in `<repo>/otls/`, so no rebuild is needed for first use.
+2. Look at the top of the parm panel — `Look Through Camera` button + `Show Nodal Point Guide` toggle sit above the six tabs (Lens / Distortion / Camera Body / Biomechanics / Post-Processing / Pipeline).
+3. Click `Look Through Camera` — the Solaris viewport locks to `/CinemaRig/FluidHead/Body/Sensor`.
+4. Try a focal length that didn't exist before this release: change `Lens ID` to `cooke_ana_i_s35_25mm` or `cooke_ana_i_s35_180mm` and update the focal length to match.
 
-### Step 5 (optional) — End-to-end verification
+**OBJ context** — in `/obj`:
+
+1. **Tab → Cinema Camera Rig** — creates `cinema::camera_rig::3.0`.
+2. Viewport draws a camera frustum at world origin (no yellow ring distracts on load).
+3. Click `Look Through Camera` — viewport locks to the inner `cinema_camera` cam.
+4. Toggle `Show Nodal Point Guide` to bring back the small yellow ring at the entrance pupil (~1.25cm behind sensor at default 125mm offset) for parallax-correct pan setup.
+
+All 9 HDAs ship pre-built in `<repo>/otls/`, so no rebuild is needed for first use.
+
+### Step 5 (optional) — End-to-end build + verify in one paste
+
+```python
+exec(open(r"C:\Houdini_Camera_Rig_System\scripts\rebuild_and_verify.py").read())
+```
+
+The driver:
+- bootstraps `CINEMA_CAMERA_REPO` + `sys.path` if not already set,
+- rebuilds all 9 HDAs from source (Mile 1),
+- reloads the live session (Mile 2),
+- runs `verify_v3.py` end-to-end (Mile 3),
+- prints a final tally (Mile 4).
+
+Expected: **9/9 build** and **38 verify pass / 0 fail** across seven sections — operator-type registration, OBJ orchestrator cook with the new Display-flag wiring, LOP USD prim authoring, biomechanics metadata + time samples, lens-registry loading, Copernicus 2.0 satellite registration, and a v2-chain cook smoke test. Scratch nodes (`/obj/__verify_v3_obj`, `/stage/__verify_v3_lop`, `/stage/__verify_v3_biomech`, `/obj/__verify_v3_cop`) are left for inspection — destroy them when done.
+
+To run verify alone without rebuilding:
 
 ```python
 exec(open(r"C:\Houdini_Camera_Rig_System\scripts\verify_v3.py").read())
 ```
 
-Expected: ~25 `[PASS]` lines covering operator-type registration, sub-HDA wiring (`::3.0` resolution), USD prim authoring, biomechanics metadata + time samples, and lens-registry loading. The script leaves three test nodes (`/obj/__verify_v3_obj`, `/stage/__verify_v3_lop`, `/stage/__verify_v3_biomech`) for manual inspection — destroy them when done.
-
 ### Step 6 (optional) — Rebuild HDAs from source
 
-If you edit any builder under `scripts/python/cinema_camera/builders/`, paste this into the Houdini Python shell. It uninstalls the old HDA registrations, force-loads the repo's `cinema_camera/`, and rebuilds + reinstalls all 6 HDAs:
+`rebuild_and_verify.py` is the canonical path. Alternatives:
 
 ```python
-exec(open(r"C:\Houdini_Camera_Rig_System\scripts\bootstrap_v3_build.py").read())
+# In-Houdini direct, no verify:
+from cinema_camera.builders.build_all import build_all_v3
+build_all_v3()
 ```
 
-Or rebuild out-of-process via Synapse (Synapse server must be running on `:9999`):
+Out-of-process via Synapse (server must be running on `:9999`):
 
 ```bash
 python C:\Houdini_Camera_Rig_System\scripts\python\cinema_camera\builders\_rebuild_all_hdas.py
+```
+
+For a heavier reset that also clears shadowed legacy installs:
+
+```python
+exec(open(r"C:\Houdini_Camera_Rig_System\scripts\bootstrap_v3_build.py").read())
 ```
 
 ### Troubleshooting
@@ -106,7 +138,7 @@ python C:\Houdini_Camera_Rig_System\scripts\python\cinema_camera\builders\_rebui
 | `CINEMA_CAMERA_REPO` is `None` after Houdini restart | Re-run installer; confirm `~/houdini21.0/packages/cinema_camera_rig.json` exists and resolves (target file present). |
 | `ModuleNotFoundError: cinema_camera.builders.build_all` | A pre-existing `~/houdini21.0/scripts/python/cinema_camera/` is shadowing the repo. Run `bootstrap_v3_build.py` (handles this automatically), or rename the shadow: `os.rename(r"C:\Users\You\houdini21.0\scripts\python\cinema_camera", r"C:\Users\You\houdini21.0\scripts\python\cinema_camera_legacy")`. |
 | Symlink creation fails during install | Enable Windows Developer Mode (no admin needed) or re-run with `.\scripts\install_package.ps1 -ForceCopy`. |
-| `Tab > Cinema Camera Rig LOP` not in menu | Confirm `<repo>/otls/cinema_camera_rig_lop_3.0.hda` exists and is loaded: `print([f for f in hou.hda.loadedFiles() if "Camera_Rig_System" in f])` should show six entries. If empty, restart Houdini. |
+| `Tab > Cinema Camera Rig LOP` not in menu | Confirm `<repo>/otls/cinema_camera_rig_lop_3.0.hda` exists and is loaded: `print([f for f in hou.hda.loadedFiles() if "Camera_Rig_System" in f])` should show nine entries (3 legacy cop2 + 3 cop preview + chops_biomechanics + LOP + OBJ orchestrators). If empty, restart Houdini. |
 | Want Wolfram-fitted lens curves | Edit `packages/cinema_camera_rig.local.json` and put your App ID in `WOLFRAM_APP_ID` (get one free at https://account.wolfram.com/me/apps). The fit pipeline currently has an asyncio bug — see roadmap. |
 
 ---
@@ -144,7 +176,7 @@ The package descriptor's `path: $CINEMA_CAMERA_REPO` makes Houdini auto-prepend 
 
 ```mermaid
 flowchart LR
-    PARMS[HDA parameter interface<br/>6 tabs - 42 parms]:::primary
+    PARMS[HDA parameter interface<br/>Look Through button + nodal toggle<br/>6 tabs - 42 parms]:::primary
 
     BR[build_camera_rig<br/>Xform hierarchy<br/>+ camera attrs]:::primary
     BM[apply_biomechanics<br/>spring/lag solver<br/>+ handheld shake]:::primary
@@ -166,6 +198,45 @@ flowchart LR
 ```
 
 The `apply_biomechanics` LOP runs the damped-spring ODE (`x'' = -k(x - target_lagged) - c·x'`, `c = 2√k·ζ`) over `hou.playbar.frameRange()` and writes per-frame USD time samples on `/CinemaRig/FluidHead`'s `xformOp:rotateXYZ`. Procedural handheld shake (deterministic sin-sum with phase offsets) layers on top. Solver state is preserved as `cinema:rig:biomech:*` metadata attrs for downstream introspection.
+
+---
+
+## The 9-HDA pipeline
+
+Two orchestrators, three legacy cop2 satellites (consumed by the OBJ orchestrator), three Copernicus 2.0 preview satellites (independent, currently MVP), one CHOPs biomechanics sub-HDA, all driven by the same shared parm template.
+
+```mermaid
+flowchart TB
+    PT[parm_templates.py<br/>6 tabs + Look Through button<br/>+ Show Nodal Point Guide toggle]:::shared
+
+    LOP[cinema::camera_rig_lop::3.0<br/>Solaris LOP orchestrator<br/>USD camera + Karma shader + biomech]:::orch
+    OBJ[cinema::camera_rig::3.0<br/>OBJ subnet orchestrator<br/>cop2 post-pipeline]:::orch
+
+    CHOPS[cinema::chops_biomechanics::3.0<br/>spring + lag + handheld CHOPs]:::sat
+
+    L_FLARE[cinema::cop_anamorphic_flare::3.0<br/>legacy cop2 FFT iris convolution]:::legacy
+    L_NOISE[cinema::cop_sensor_noise::3.0<br/>legacy cop2 dual-gain VEX]:::legacy
+    L_STMAP[cinema::cop_stmap_aov::3.0<br/>legacy cop2 GPU VEX +<br/>Newton-Raphson redistort]:::legacy
+
+    V_FLARE[cinema::flare::3.0<br/>cop streakblur preview]:::preview
+    V_NOISE[cinema::sensor_noise::3.0<br/>cop fractalnoise preview]:::preview
+    V_STMAP[cinema::stmap_aov::3.0<br/>cop pythonsnippet preview]:::preview
+
+    PT --> LOP
+    PT --> OBJ
+    OBJ --> CHOPS
+    OBJ --> L_FLARE
+    OBJ --> L_NOISE
+    OBJ --> L_STMAP
+
+    classDef shared  fill:#0d4a5f,stroke:#0a3a4a,color:#fff,stroke-width:2px
+    classDef orch    fill:#7c2d12,stroke:#5a1f0c,color:#fff,stroke-width:2px
+    classDef sat     fill:#0d4a5f,stroke:#0a3a4a,color:#fff,stroke-width:2px
+    classDef legacy  fill:#374151,stroke:#1f2937,color:#fff,stroke-width:2px
+    classDef preview fill:#d97706,stroke:#a85f04,color:#fff,stroke-width:2px
+```
+
+The Copernicus 2.0 preview satellites (orange) are **deliberately disconnected** from the orchestrator. They register in the `cop` category, cook cleanly, and are usable standalone — but they're MVP ports that haven't yet reached parity with the legacy cop2 stack (no GPU VEX, no Newton-Raphson redistort, no signal-dependent shot noise). Migration of the orchestrator to consume them happens when the missing physics is ported via Copernicus `vopnet+snippet`.
 
 ---
 
@@ -221,15 +292,18 @@ Heuristic fields (Cooke does not publish these — replace via Wolfram fits when
 In Houdini's Python shell after install + restart:
 
 ```python
-# Build/rebuild all 6 HDAs (writes to <repo>/otls/, installs in session)
+# Build all 9 HDAs + reload + verify, in one paste:
+exec(open(r"C:\Users\You\Houdini_Camera_Rig_System\scripts\rebuild_and_verify.py").read())
+
+# Or just build (no verify):
 from cinema_camera.builders.build_all import build_all_v3
 build_all_v3()
 
-# Verify everything end-to-end
+# Or just verify (no rebuild):
 exec(open(r"C:\Users\You\Houdini_Camera_Rig_System\scripts\verify_v3.py").read())
 
 # Use a brand-new focal length
-import sys
+import os
 from pathlib import Path
 from cinema_camera.registry import get_lens
 spec = get_lens("cooke_ana_i_s35",
@@ -250,11 +324,12 @@ python C:\Users\You\Houdini_Camera_Rig_System\scripts\python\cinema_camera\build
 
 ```
 Houdini_Camera_Rig_System/
-├── otls/                          ← 6x v3.0 HDAs (Houdini auto-loaded)
-│   ├── cinema_camera_rig_3.0.hda            (OBJ orchestrator, deprecated)
+├── otls/                          ← 9x v3.0 HDAs (Houdini auto-loaded)
+│   ├── cinema_camera_rig_3.0.hda            (OBJ orchestrator + CineCamera UX)
 │   ├── cinema_camera_rig_lop_3.0.hda        (Solaris-native primary)
-│   ├── cinema_chops_biomechanics_3.0.hda
-│   └── cinema_cop_{anamorphic_flare,sensor_noise,stmap_aov}_3.0.hda
+│   ├── cinema_chops_biomechanics_3.0.hda    (spring/lag/shake CHOPs)
+│   ├── cinema_cop_{anamorphic_flare,sensor_noise,stmap_aov}_3.0.hda  (legacy cop2 stack)
+│   └── cinema_{flare,sensor_noise,stmap_aov}_3.0.hda                 (Copernicus 2.0 preview)
 ├── vex/include/                   ← Karma CVEX shader + optics header
 │   ├── karma_cinema_lens.vfl
 │   └── libcinema_optics.h
@@ -267,7 +342,15 @@ Houdini_Camera_Rig_System/
 │   │   ├── cooke_anamorphic.py              (JSON loader / provider)
 │   │   └── _emit_lens_jsons.py              (regenerator)
 │   ├── bodies/alexa35.py
-│   └── builders/                  (HDA builders + rebuild drivers)
+│   └── builders/                  ← 9 HDA builders + drivers
+│       ├── parm_templates.py                (shared 6-tab + top-level controls)
+│       ├── build_camera_rig_orchestrator.py
+│       ├── build_camera_rig_lop.py
+│       ├── build_chops_biomechanics.py
+│       ├── build_cop_{anamorphic_flare,sensor_noise,stmap_aov}.py   (legacy cop2)
+│       ├── build_cop_{flare,sensor_noise,stmap_aov}_v2.py            (Copernicus 2.0 preview)
+│       ├── build_all.py                     (in-Houdini build driver)
+│       └── _rebuild_all_hdas.py             (Synapse out-of-process driver)
 ├── packages/
 │   ├── cinema_camera_rig.json     (override package descriptor)
 │   └── cinema_camera_rig.local.json.example  (template; live file gitignored)
@@ -277,9 +360,11 @@ Houdini_Camera_Rig_System/
 │   ├── tests/                     (pytest suite)
 │   └── examples/                  (build_focus_pull_example.py + .hip)
 └── scripts/                       ← top-level utilities
-    ├── install_package.ps1        (symlink installer)
-    ├── bootstrap_v3_build.py      (in-Houdini reset+rebuild)
-    └── verify_v3.py               (end-to-end checker)
+    ├── install_package.ps1            (symlink installer)
+    ├── rebuild_and_verify.py          (single-paste build + reload + verify driver)
+    ├── bootstrap_v3_build.py          (heavier reset + rebuild, clears legacy shadows)
+    ├── verify_v3.py                   (7-section end-to-end checker)
+    └── probe_copernicus.py            (Copernicus type/category diagnostic)
 ```
 
 Project-private docs (architecture spec, Wolfram amendment, setup notes, agent-team handoff) live under `cinema_camera/*.md`.
@@ -290,14 +375,18 @@ Project-private docs (architecture spec, Wolfram amendment, setup notes, agent-t
 
 - [x] **Override package** — repo authoritative, dual-path sync killed
 - [x] **PDF-grounded lens registry** — 10 Cooke primes generated from datasheet
-- [x] **v3.0 HDA pipeline** — 6 HDAs versioned, sub-HDA wiring resolved (sees `::3.0`)
+- [x] **v3.0 HDA pipeline** — 9 HDAs versioned, sub-HDA wiring resolved (sees `::3.0`)
 - [x] **Solaris-native USD camera authoring** — full `/CinemaRig/FluidHead/...` hierarchy + Karma shader binding + RenderProduct/RenderSettings
 - [x] **Biomechanics in LOP context** — damped-spring solver + procedural handheld shake authored as USD time samples
-- [ ] **Copernicus 2.0 post-processing** — port the 3 cop2net satellite HDAs to Copernicus 2.0 + integrate into Karma render pipeline (Mile 3, in progress)
-- [ ] **Wolfram-fitted curves** — replace heuristic squeeze breathing / pupil shift / distortion with ODE-fitted curves once the asyncio bug in `wolfram_oracle.py` is healed (W2-W5)
-- [ ] **Refresh example .hip** — current `examples/cinema_rig_focus_pull_example.hip` references the v2.0 OBJ rig; regenerate with v3.0 LOP + a new focal length
+- [x] **Copernicus 2.0 post-processing preview** — `cinema::{flare,sensor_noise,stmap_aov}::3.0` registered in the `cop` category; cook clean; standalone usable. Full physics parity (dual-gain VEX, GPU redistort, FFT iris) deferred to `vopnet+snippet` migration.
+- [x] **Unified CineCamera UX** — both OBJ and LOP rigs now display a camera frustum on load, expose a `Look Through Camera` button at the top of the parm panel, and gate the nodal-point guide behind a `Show Nodal Point Guide` toggle.
+- [x] **Single-paste build + verify driver** — `scripts/rebuild_and_verify.py` covers env bootstrap → build → reload → 7-section verify → tally in one exec.
+- [ ] **Copernicus 2.0 full-physics port** — port dual-gain noise VEX + GPU STMap + FFT iris flare into `vopnet+snippet` so the orchestrator can swap legacy cop2 → cop without losing features.
+- [ ] **Parm-wiring audit** — the v2 satellites use defensive `_wire` calls that silently no-op on parm-name misses. Add a `verify_v3.py` section [8] that introspects which internal expressions actually carry `ch(...)` references on v2 instances.
+- [ ] **Wolfram-fitted curves** — replace heuristic squeeze breathing / pupil shift / distortion with ODE-fitted curves once the asyncio bug in `wolfram_oracle.py` is healed (W2-W5).
+- [ ] **Refresh example .hip** — current `examples/cinema_rig_focus_pull_example.hip` references the v2.0 OBJ rig; regenerate with v3.0 LOP + a new focal length.
 
-The `cinema::camera_rig::3.0` OBJ orchestrator is **deprecated** — it predates the LOP rig and can't participate in a Solaris-native workflow. Use `cinema::camera_rig_lop::3.0` for new work.
+The OBJ orchestrator (`cinema::camera_rig::3.0`) is no longer treated as deprecated — the v3.1 UX work brought its in-viewport behavior to parity with what a Maya/Unreal user would expect from a CineCamera-style node. The Solaris LOP rig (`cinema::camera_rig_lop::3.0`) is still the canonical path for new USD-first workflows; the OBJ rig is the right choice for /obj-context, Mantra-era, or back-compat scenes.
 
 ---
 
@@ -305,6 +394,7 @@ The `cinema::camera_rig::3.0` OBJ orchestrator is **deprecated** — it predates
 
 | Version | Notes |
 |---|---|
+| v3.1 | Copernicus 2.0 preview satellites shipping; unified CineCamera UX (camera frustum on load, Look Through button, toggleable nodal guide); single-paste `rebuild_and_verify.py` driver; 38-assertion verify suite |
 | v3.0 | Repo-authoritative override; PDF-grounded Cooke lineup; Solaris-native LOP rig with biomechanics; HDA type-name versioning fix |
 | v2.0 | OBJ-context orchestrator + 4 satellite HDAs; lived in OneDrive `houdini21.0/`; dual-path sync required |
 | v4.0 spec | Project specification (Physical Architecture + Synapse Refactor + Wolfram Amendment) under `cinema_camera/CINEMA_CAMERA_RIG_v4_*.md` |

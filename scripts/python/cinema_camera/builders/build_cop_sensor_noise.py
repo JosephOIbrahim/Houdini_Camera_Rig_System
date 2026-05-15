@@ -78,6 +78,18 @@ def build_cop_sensor_noise_hda(
     # ── Create temporary COP network ─────────────────────
     obj = hou.node("/obj")
     temp_cop = obj.createNode("cop2net", "__cinema_noise_build")
+    try:
+        return _build_legacy_noise_inside(temp_cop, save_dir, hda_name)
+    finally:
+        try:
+            temp_cop.destroy()
+        except Exception:
+            pass
+
+
+def _build_legacy_noise_inside(temp_cop, save_dir: str, hda_name: str) -> str:
+    """Inner builder; isolated so caller can wrap in try/finally cleanup."""
+    import hou
 
     # Build inside a subnet
     sub = temp_cop.createNode("subnet", "__noise_sub")
@@ -110,12 +122,19 @@ def build_cop_sensor_noise_hda(
     hda_node = sub.createDigitalAsset(
         name="cinema::cop_sensor_noise::3.0",
         hda_file_name=hda_path,
-        description="Cinema Sensor Noise",
+        description="[LEGACY] Cinema Sensor Noise (cop2, full physics)",
         min_num_inputs=1,
         max_num_inputs=1,
         version="3.0",
     )
     hda_def = hda_node.type().definition()
+    hda_def.setComment(
+        "LEGACY (cop2 category): stable dual-gain shot+read VEX physics.\n"
+        "Wired into the orchestrator's post_pipeline.\n"
+        "Copernicus 2.0 preview lives at cinema::sensor_noise::3.0 (cop category)\n"
+        "but is currently MVP-only (additive fractal noise, no signal-dependent\n"
+        "shot scaling or EI/native-iso gain math)."
+    )
 
     # ── Parameter interface ──────────────────────────────
     ptg = hda_node.parmTemplateGroup()
@@ -172,10 +191,9 @@ def build_cop_sensor_noise_hda(
         "Physically-based dual-gain sensor noise model"
     )
 
-    # ── Save and clean up ────────────────────────────────
+    # ── Save (cleanup happens in outer try/finally) ──────
     hda_def.updateFromNode(hda_node)
     hda_def.save(hda_path)
     hda_node.destroy()
-    temp_cop.destroy()
 
     return hda_path

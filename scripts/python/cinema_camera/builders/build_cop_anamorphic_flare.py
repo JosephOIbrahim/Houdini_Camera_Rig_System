@@ -72,6 +72,18 @@ def build_cop_anamorphic_flare_hda(
     # ── Create temporary COP network ─────────────────────
     obj = hou.node("/obj")
     temp_cop = obj.createNode("cop2net", "__cinema_flare_build")
+    try:
+        return _build_legacy_flare_inside(temp_cop, save_dir, hda_name)
+    finally:
+        try:
+            temp_cop.destroy()
+        except Exception:
+            pass
+
+
+def _build_legacy_flare_inside(temp_cop, save_dir: str, hda_name: str) -> str:
+    """Inner builder; isolated so caller can wrap in try/finally cleanup."""
+    import hou
 
     # Build inside a subnet (subnet can be converted to HDA)
     sub = temp_cop.createNode("subnet", "__flare_sub")
@@ -125,12 +137,18 @@ def build_cop_anamorphic_flare_hda(
     hda_node = sub.createDigitalAsset(
         name="cinema::cop_anamorphic_flare::3.0",
         hda_file_name=hda_path,
-        description="Cinema Anamorphic Flare",
+        description="[LEGACY] Cinema Anamorphic Flare (cop2, full-featured)",
         min_num_inputs=1,
         max_num_inputs=1,
         version="3.0",
     )
     hda_def = hda_node.type().definition()
+    hda_def.setComment(
+        "LEGACY (cop2 category): stable, full-featured FFT iris-convolution flare.\n"
+        "Wired into the orchestrator's post_pipeline.\n"
+        "Copernicus 2.0 preview lives at cinema::flare::3.0 (cop category) but\n"
+        "is currently MVP-only (single streakblur, missing iris/ghosting/asymmetry)."
+    )
 
     # ── Parameter interface ──────────────────────────────
     ptg = hda_node.parmTemplateGroup()
@@ -190,10 +208,9 @@ def build_cop_anamorphic_flare_hda(
         "FFT convolution lens flare with physically accurate iris patterns"
     )
 
-    # ── Save and clean up ────────────────────────────────
+    # ── Save (cleanup happens in outer try/finally) ──────
     hda_def.updateFromNode(hda_node)
     hda_def.save(hda_path)
     hda_node.destroy()
-    temp_cop.destroy()
 
     return hda_path

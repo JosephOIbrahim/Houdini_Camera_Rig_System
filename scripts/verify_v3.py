@@ -107,6 +107,34 @@ if instance:
         else:
             _bad(f"{path}: got {got_type}  expected {want_type}")
 
+    # Camera-vs-null Display flag wiring (UX regression guard).
+    # The rig should look like a camera in the viewport, not a yellow ring.
+    cam_inner = instance.node("cinema_camera")
+    if cam_inner is None:
+        _bad("instance.node('cinema_camera') missing -- rig has no inner cam")
+    elif cam_inner.isGenericFlagSet(hou.nodeFlag.Display):
+        _ok("inner cinema_camera has Display flag (frustum visible)")
+    else:
+        _bad("inner cinema_camera missing Display flag (rig won't look like a camera)")
+
+    pupil_null = instance.node("entrance_pupil_pivot")
+    if pupil_null is None:
+        _bad("instance.node('entrance_pupil_pivot') missing")
+    elif pupil_null.evalParm("display") == 0:
+        _ok("entrance_pupil_pivot hidden by default (show_nodal_guide=False)")
+    else:
+        _bad("entrance_pupil_pivot visible by default (expected hidden)")
+
+    # Top-level Look-Through button + nodal-guide toggle present on the HDA.
+    if instance.parm("look_through_camera") is not None:
+        _ok("look_through_camera button parm present")
+    else:
+        _bad("look_through_camera button parm missing")
+    if instance.parm("show_nodal_guide") is not None:
+        _ok("show_nodal_guide toggle parm present")
+    else:
+        _bad("show_nodal_guide toggle parm missing")
+
     # Cook
     try:
         instance.cook(force=True)
@@ -167,9 +195,9 @@ else:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# [5] Biomechanics LOP wiring: metadata attrs present + shake authors samples
+# [4] Biomechanics LOP wiring: metadata attrs present + shake authors samples
 # ──────────────────────────────────────────────────────────────────────────
-print("\n[5] biomechanics LOP wiring (Mile 2)")
+print("\n[4] biomechanics LOP wiring (Mile 2)")
 try:
     stage_net = hou.node("/stage")
     biomech_lop = stage_net.node("__verify_v3_biomech")
@@ -222,9 +250,9 @@ except Exception as e:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# [4] Lens registry loads a brand-new (post-v3.0) focal length
+# [5] Lens registry loads a brand-new (post-v3.0) focal length
 # ──────────────────────────────────────────────────────────────────────────
-print("\n[4] Lens registry: brand-new 32mm Cooke (didn't exist pre-v3.0)")
+print("\n[5] Lens registry: brand-new 32mm Cooke (didn't exist pre-v3.0)")
 try:
     from pathlib import Path
     from cinema_camera.registry import get_lens, list_lenses
@@ -242,6 +270,103 @@ except Exception as e:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# [6] Copernicus 2.0 satellite HDAs registered (Mile 3)
+# ──────────────────────────────────────────────────────────────────────────
+print("\n[6] Copernicus 2.0 satellite HDAs (cop category) -- registration")
+_cop_cat = None
+try:
+    _cop_cat = hou.copNodeTypeCategory()
+    for op_name in ("cinema::flare::3.0",
+                    "cinema::sensor_noise::3.0",
+                    "cinema::stmap_aov::3.0"):
+        t = hou.nodeType(_cop_cat, op_name)
+        if t is None:
+            _bad(f"{op_name} not registered in cop category")
+        else:
+            src = t.definition().libraryFilePath() or ""
+            _ok(f"{op_name}  source={os.path.basename(src)}")
+except AttributeError as e:
+    _bad(f"hou.copNodeTypeCategory() unavailable -- Copernicus may not be enabled: {e}")
+except Exception as e:
+    _bad(f"cop type check failed: {e}")
+    traceback.print_exc()
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# [7] Copernicus 2.0 cook smoke test: instantiate v2 chain and cook
+# ──────────────────────────────────────────────────────────────────────────
+print("\n[7] Copernicus 2.0 cook smoke test (v2 satellite chain)")
+if _cop_cat is None:
+    _row(INFO, "skipping -- cop category unavailable")
+else:
+    obj_ctx = hou.node("/obj")
+    existing_cop_test = obj_ctx.node("__verify_v3_cop")
+    if existing_cop_test:
+        existing_cop_test.destroy()
+    cop_test_geo = None
+    try:
+        # Copernicus 2.0 networks live inside SOP-category contexts in H21.
+        # Spin up a host geo, drop a copnet, wire constant -> flare -> noise.
+        cop_test_geo = obj_ctx.createNode("geo", "__verify_v3_cop")
+        cop_net = cop_test_geo.createNode("copnet", "test_copnet")
+
+        # Source image: constant
+        src = cop_net.createNode("constant", "src")
+
+        # Flare v2
+        try:
+            flare = cop_net.createNode("cinema::flare", "flare")
+            flare.setInput(0, src)
+            _ok("instantiated cinema::flare::3.0 in copnet")
+        except Exception as e:
+            _bad(f"cinema::flare::3.0 instantiation failed: {e}")
+            flare = src
+
+        # Sensor noise v2 (downstream of flare)
+        try:
+            noise = cop_net.createNode("cinema::sensor_noise", "noise")
+            noise.setInput(0, flare)
+            _ok("instantiated cinema::sensor_noise::3.0 in copnet")
+        except Exception as e:
+            _bad(f"cinema::sensor_noise::3.0 instantiation failed: {e}")
+            noise = flare
+
+        # STMap v2 (independent branch, pure generator)
+        try:
+            stmap = cop_net.createNode("cinema::stmap_aov", "stmap")
+            _ok("instantiated cinema::stmap_aov::3.0 in copnet")
+        except Exception as e:
+            _bad(f"cinema::stmap_aov::3.0 instantiation failed: {e}")
+            stmap = None
+
+        # Cook main chain
+        try:
+            noise.cook(force=True)
+            errs = noise.errors()
+            if errs:
+                _bad(f"v2 chain cook errors ({len(errs)}): {errs[0][:120]}...")
+            else:
+                _ok("v2 flare -> noise chain cooks clean")
+        except Exception as e:
+            _bad(f"v2 chain cook exception: {e}")
+
+        # Cook stmap separately
+        if stmap is not None:
+            try:
+                stmap.cook(force=True)
+                errs = stmap.errors()
+                if errs:
+                    _bad(f"v2 stmap cook errors ({len(errs)}): {errs[0][:120]}...")
+                else:
+                    _ok("v2 stmap cooks clean")
+            except Exception as e:
+                _bad(f"v2 stmap cook exception: {e}")
+    except Exception as e:
+        _bad(f"cop cook smoke test setup failed: {e}")
+        traceback.print_exc()
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Summary
 # ──────────────────────────────────────────────────────────────────────────
 print()
@@ -256,4 +381,5 @@ print("Test nodes left for inspection (destroy when done):")
 print("  /obj/__verify_v3_obj")
 print("  /stage/__verify_v3_lop")
 print("  /stage/__verify_v3_biomech")
+print("  /obj/__verify_v3_cop  (Copernicus 2.0 smoke test geo)")
 print("=" * 64)

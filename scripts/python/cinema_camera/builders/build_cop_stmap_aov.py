@@ -4,6 +4,11 @@ Cinema Camera Rig v4.0 -- COP STMap AOV HDA Builder
 Creates cinema::cop_stmap_aov::3.0
 Nuke-ready STMap using libcinema_optics.h distortion model.
 
+Note: unlike the flare/noise sibling HDAs, STMap has NO `enable` toggle. It
+is a pure generator (R, G = distorted UV; B = 0) with no upstream signal to
+pass through when disabled -- the AOV is either consumed by the downstream
+compositor or it isn't. Asymmetry is intentional.
+
 Executed through Synapse bridge in a live Houdini session.
 """
 
@@ -84,6 +89,18 @@ def build_cop_stmap_aov_hda(
     # ── Create temporary COP network ─────────────────────
     obj = hou.node("/obj")
     temp_cop = obj.createNode("cop2net", "__cinema_stmap_build")
+    try:
+        return _build_legacy_stmap_inside(temp_cop, save_dir, hda_name)
+    finally:
+        try:
+            temp_cop.destroy()
+        except Exception:
+            pass
+
+
+def _build_legacy_stmap_inside(temp_cop, save_dir: str, hda_name: str) -> str:
+    """Inner builder; isolated so caller can wrap in try/finally cleanup."""
+    import hou
 
     # Build inside a subnet
     sub = temp_cop.createNode("subnet", "__stmap_sub")
@@ -109,12 +126,18 @@ def build_cop_stmap_aov_hda(
     hda_node = sub.createDigitalAsset(
         name="cinema::cop_stmap_aov::3.0",
         hda_file_name=hda_path,
-        description="Cinema STMap AOV",
+        description="[LEGACY] Cinema STMap AOV (cop2, GPU VEX + redistort)",
         min_num_inputs=0,
         max_num_inputs=1,
         version="3.0",
     )
     hda_def = hda_node.type().definition()
+    hda_def.setComment(
+        "LEGACY (cop2 category): GPU VEX via libcinema_optics.h, supports\n"
+        "undistort + Newton-Raphson redistort modes. Wired into the orchestrator.\n"
+        "Copernicus 2.0 preview lives at cinema::stmap_aov::3.0 (cop category)\n"
+        "but is currently MVP-only (pure-Python per-pixel, no redistort mode)."
+    )
 
     # ── Parameter interface ──────────────────────────────
     ptg = hda_node.parmTemplateGroup()
@@ -187,10 +210,9 @@ def build_cop_stmap_aov_hda(
         "Nuke-ready STMap using libcinema_optics.h distortion model"
     )
 
-    # ── Save and clean up ────────────────────────────────
+    # ── Save (cleanup happens in outer try/finally) ──────
     hda_def.updateFromNode(hda_node)
     hda_def.save(hda_path)
     hda_node.destroy()
-    temp_cop.destroy()
 
     return hda_path
