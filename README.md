@@ -184,7 +184,7 @@ flowchart LR
     RP[render_product<br/>Cooke i metadata<br/>+ ASWF EXR headers]:::primary
     RS[render_settings<br/>resolution + camera<br/>+ Karma XPU config]:::primary
 
-    USD[/CinemaRig USD stage/<br/>FluidHead/Body/Sensor/<br/>EntrancePupil + CinemaLensShader<br/>/Render/Products + Settings]:::accent
+    USD["/CinemaRig USD stage/<br/>FluidHead/Body/Sensor/<br/>EntrancePupil + CinemaLensShader<br/>/Render/Products + Settings"]:::accent
 
     PARMS --> BR
     BR --> BM
