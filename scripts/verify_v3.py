@@ -252,18 +252,30 @@ except Exception as e:
 # ──────────────────────────────────────────────────────────────────────────
 # [5] Lens registry loads a brand-new (post-v3.0) focal length
 # ──────────────────────────────────────────────────────────────────────────
-print("\n[5] Lens registry: brand-new 32mm Cooke (didn't exist pre-v3.0)")
+print("\n[5] Lens registry: Cooke S35 + Cooke FF+ skeleton")
 try:
     from pathlib import Path
     from cinema_camera.registry import get_lens, list_lenses
     _row(INFO, f"registered providers: {list_lenses()}")
+
+    # ── S35 line (PDF-authoritative datasheet 030623) ──
     lens_path = Path(os.environ["CINEMA_CAMERA_REPO"]) / "cinema_camera" / "lenses" / "cooke_ana_i_s35_32mm.json"
     spec = get_lens("cooke_ana_i_s35", lens_path)
-    _ok(f"loaded {spec.lens_id}: f={spec.focal_length_mm}mm, T{spec.t_stop_min}-{spec.t_stop_max}, MOD={spec.close_focus_m}m")
-    _ok(f"mechanics: w={spec.mechanics.weight_kg}kg, L={spec.mechanics.length_mm}mm, "
-        f"pupil={spec.mechanics.entrance_pupil_offset_mm}mm")
-    _ok(f"squeeze: @MOD={spec.effective_squeeze(spec.close_focus_m):.3f} "
-        f"@infinity={spec.effective_squeeze(1e10):.3f}")
+    _ok(f"S35 32mm: f={spec.focal_length_mm}mm, T{spec.t_stop_min}-{spec.t_stop_max}, MOD={spec.close_focus_m}m, squeeze={spec.squeeze_ratio}")
+    _ok(f"S35 mechanics: w={spec.mechanics.weight_kg}kg, L={spec.mechanics.length_mm}mm, pupil={spec.mechanics.entrance_pupil_offset_mm}mm")
+    _ok(f"S35 squeeze: @MOD={spec.effective_squeeze(spec.close_focus_m):.3f} @infinity={spec.effective_squeeze(1e10):.3f}")
+
+    # ── FF+ line (skeleton, datasheet pending; verify it loads cleanly) ──
+    ff_plus_path = Path(os.environ["CINEMA_CAMERA_REPO"]) / "cinema_camera" / "lenses" / "cooke_ana_i_ff_plus_50mm.json"
+    if ff_plus_path.exists():
+        ff_spec = get_lens("cooke_ana_i_ff_plus", ff_plus_path)
+        _ok(f"FF+ 50mm: f={ff_spec.focal_length_mm}mm, squeeze={ff_spec.squeeze_ratio} (1.8x for LF/VV bodies)")
+        if abs(ff_spec.squeeze_ratio - 1.8) < 0.01:
+            _ok("FF+ squeeze ratio is 1.8 (correct for full-frame anamorphic)")
+        else:
+            _bad(f"FF+ squeeze ratio is {ff_spec.squeeze_ratio} (expected 1.8)")
+    else:
+        _bad(f"FF+ skeleton JSON missing at {ff_plus_path}")
 except Exception as e:
     _bad(f"lens load failed: {e}")
     traceback.print_exc()

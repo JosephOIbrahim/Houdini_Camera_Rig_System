@@ -64,10 +64,20 @@ _SCRIPT_BUILD_RIG = textwrap.dedent("""\
     combined_weight_kg = hda.evalParm("combined_weight_kg")
 
     # ── Body offset lookup ───────────────────────────────
+    # Sensor-plane offset (y = above tripod plate, z = behind operator handle)
+    # for each of the 6 factory preset bodies + legacy aliases. Used to
+    # position the camera relative to the FluidHead mount.
     _BODY_OFFSETS_CM = {
-        "alexa35":      {"y": 5.0, "z": -8.0},
-        "red_komodo":   {"y": 3.5, "z": -5.0},
-        "sony_venice2": {"y": 5.5, "z": -9.0},
+        # 2026 factory presets (match cinema_camera.presets.CAMERA_PRESETS)
+        "alexa35":                     {"y": 5.0, "z": -8.0},
+        "alexa_mini_lf":               {"y": 4.5, "z": -7.0},
+        "alexa_65":                    {"y": 7.0, "z": -12.5},
+        "sony_venice_2":               {"y": 5.5, "z": -9.0},
+        "red_v_raptor_8k_vv":          {"y": 3.5, "z": -5.5},
+        "blackmagic_ursa_cine_12k_lf": {"y": 5.5, "z": -9.0},
+        # Legacy aliases (pre-v3.2)
+        "red_komodo":                  {"y": 3.5, "z": -5.0},
+        "sony_venice2":                {"y": 5.5, "z": -9.0},
     }
     offsets = _BODY_OFFSETS_CM.get(body_id, {"y": 4.0, "z": -7.0})
 

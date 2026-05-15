@@ -72,6 +72,123 @@ def build_camera_rig_parm_templates():
     folders = []
 
     # ═══════════════════════════════════════════════════════
+    # TAB 0: PRESET -- 2026 professional cinema body presets
+    # ═══════════════════════════════════════════════════════
+    # Six factory presets pairing top 2026 cinema bodies with the Cooke
+    # anamorphic family. Selecting a preset and clicking "Apply Preset"
+    # bulk-fills the body + lens parms on the rest of the tabs.
+    #
+    # Preset data lives in cinema_camera.presets.CAMERA_PRESETS (single
+    # source of truth, imported by the callback at parm-set time).
+    preset_folder = hou.FolderParmTemplate(
+        "preset_tab", "Preset",
+        folder_type=hou.folderType.Tabs,
+    )
+
+    preset_folder.addParmTemplate(hou.MenuParmTemplate(
+        "camera_preset", "Camera Preset",
+        menu_items=(
+            "alexa_35",
+            "alexa_mini_lf",
+            "alexa_65",
+            "sony_venice_2",
+            "red_v_raptor_8k_vv",
+            "blackmagic_ursa_cine_12k_lf",
+        ),
+        menu_labels=(
+            "ARRI ALEXA 35 (S35, 4.6K Open Gate)",
+            "ARRI ALEXA Mini LF (LF, 4.5K Open Gate)",
+            "ARRI ALEXA 65 (65mm, 6.5K Open Gate)",
+            "Sony VENICE 2 (FF, 8.6K)",
+            "RED V-RAPTOR 8K VV (Vista Vision)",
+            "Blackmagic URSA Cine 12K LF",
+        ),
+        default_value=0,
+        help="Top 6 professional cinema bodies in 2026 use, paired with "
+             "the Cooke anamorphic family. S35 bodies pair with Cooke "
+             "Anamorphic/i S35 (2.0x); LF/VV/65 bodies pair with Cooke "
+             "Anamorphic/i Full Frame Plus (1.8x).",
+    ))
+
+    _APPLY_PRESET_CB = (
+        "import hou, os, sys\n"
+        "n = kwargs.get('node')\n"
+        "if n is None:\n"
+        "    return\n"
+        "# Make sure cinema_camera package is on sys.path -- callback may run\n"
+        "# in a context where the package env vars haven't been read yet.\n"
+        "repo = os.environ.get('CINEMA_CAMERA_REPO', '')\n"
+        "if repo:\n"
+        "    sp = os.path.join(repo, 'scripts', 'python')\n"
+        "    if sp not in sys.path:\n"
+        "        sys.path.insert(0, sp)\n"
+        "try:\n"
+        "    from cinema_camera.presets import get_preset\n"
+        "except ImportError as e:\n"
+        "    hou.ui.displayMessage('Preset import failed: ' + str(e))\n"
+        "    return\n"
+        "key = n.parm('camera_preset').evalAsString()\n"
+        "try:\n"
+        "    p = get_preset(key)\n"
+        "except KeyError as e:\n"
+        "    hou.ui.displayMessage(str(e))\n"
+        "    return\n"
+        "# Body parms\n"
+        "for parm_name, value in (\n"
+        "    ('body_id',               p['body_id']),\n"
+        "    ('sensor_width_mm',       p['sensor_width_mm']),\n"
+        "    ('sensor_height_mm',      p['sensor_height_mm']),\n"
+        "    ('resolution_x',          p['resolution_x']),\n"
+        "    ('resolution_y',          p['resolution_y']),\n"
+        "    ('native_iso',            p['native_iso']),\n"
+        "    ('exposure_index',        p['native_iso']),\n"
+        "    ('combined_weight_kg',    p['body_weight_kg']),\n"
+        "    ('focal_length_mm',       p['default_focal_length_mm']),\n"
+        "    ('t_stop',                p['default_t_stop']),\n"
+        "    ('squeeze_ratio',         p['squeeze_ratio']),\n"
+        "    ('effective_squeeze',     p['squeeze_ratio']),\n"
+        "):\n"
+        "    pp = n.parm(parm_name)\n"
+        "    if pp is not None:\n"
+        "        pp.set(value)\n"
+        "# Lens-family-aware lens_id (uses default focal as integer mm)\n"
+        "f_mm = int(p['default_focal_length_mm'])\n"
+        "lens_id = '{0}_{1}mm'.format(p['lens_family'], f_mm)\n"
+        "lens_id_parm = n.parm('lens_id')\n"
+        "if lens_id_parm is not None:\n"
+        "    lens_id_parm.set(lens_id)\n"
+        "# Status feedback\n"
+        "label_parm = n.parm('preset_status')\n"
+        "if label_parm is not None:\n"
+        "    label_parm.set('Applied: ' + p['label'])\n"
+    )
+
+    preset_folder.addParmTemplate(hou.ButtonParmTemplate(
+        "apply_preset", "Apply Preset",
+        script_callback=_APPLY_PRESET_CB,
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Bulk-fill body + lens parms from the selected preset. "
+             "After applying you can override any individual parm on the "
+             "other tabs.",
+    ))
+
+    preset_folder.addParmTemplate(hou.StringParmTemplate(
+        "preset_status", "Last Applied", 1,
+        default_value=("(no preset applied yet)",),
+        help="Read-only label confirming which preset was last applied.",
+    ))
+
+    preset_folder.addParmTemplate(hou.SeparatorParmTemplate("preset_sep"))
+
+    preset_folder.addParmTemplate(hou.LabelParmTemplate(
+        "preset_doc",
+        "Lens-family pairing: ALEXA 35 -> Cooke Anamorphic/i S35 (2.0x squeeze). "
+        "All other bodies -> Cooke Anamorphic/i FF+ (1.8x squeeze).",
+    ))
+
+    folders.append(preset_folder)
+
+    # ═══════════════════════════════════════════════════════
     # TAB 1: LENS
     # ═══════════════════════════════════════════════════════
     lens_folder = hou.FolderParmTemplate(

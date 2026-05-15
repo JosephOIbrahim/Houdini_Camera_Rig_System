@@ -4,7 +4,7 @@
 
 Authors USD camera rigs, binds Karma CVEX lens shaders, applies fluid-head biomechanics, and post-processes with Copernicus 2.0 — all driven by datasheet-authoritative cinema lens specifications.
 
-> **Status (v3.0):** Override package live. Solaris-native LOP rig with biomechanics filter shipping. 10-prime Cooke Anamorphic/i S35 registry derived directly from the official Cooke datasheet. Copernicus 2.0 post-processing preview shipping alongside the legacy cop2 stack. Unified CineCamera-style UX on both OBJ and LOP rigs.
+> **Status (v3.2):** Override package live. Solaris-native LOP rig with biomechanics filter shipping. 10-prime Cooke Anamorphic/i S35 registry + 7-prime Cooke Anamorphic/i Full Frame Plus skeleton. Six 2026 professional cinema body presets (ARRI ALEXA 35 / Mini LF / 65, Sony VENICE 2, RED V-RAPTOR 8K VV, Blackmagic URSA Cine 12K LF). Copernicus 2.0 post-processing preview alongside the legacy cop2 stack. Unified CineCamera-style UX on both OBJ and LOP rigs.
 
 ---
 
@@ -14,6 +14,8 @@ Authors USD camera rigs, binds Karma CVEX lens shaders, applies fluid-head biome
 - **OBJ orchestrator HDA** — `cinema::camera_rig::3.0` wraps a `cam` node + biomechanics CHOPs + cop2 post-pipeline into a single subnet HDA. After v3.1 UX work the wrapper now displays a camera frustum on load (not a yellow null), has a `Look Through Camera` button at the top of its parm panel, and exposes the nodal-point guide behind a `Show Nodal Point Guide` toggle.
 - **Copernicus 2.0 preview satellites** — `cinema::flare::3.0`, `cinema::sensor_noise::3.0`, `cinema::stmap_aov::3.0` — MVP ports of the legacy cop2 post-processing to native Copernicus 2.0 (cop category). Independent of the orchestrator for now; full-physics parity is on the roadmap.
 - **10 Cooke Anamorphic/i S35 primes** — 25, 32, 40, 50, 65 Macro, 75, 100, 135, 180, 300mm — generated from PDF-authoritative spec data (datasheet version `030623`). Heuristic fields (entrance pupil offset, mumps curve, distortion) carry `_provenance` annotations marking exactly what to swap for fitted curves.
+- **7 Cooke Anamorphic/i Full Frame Plus primes (skeleton)** — 25, 32, 40, 50, 75, 100, 135mm — 1.8x squeeze, 46mm image circle, for LF/VV/65mm bodies. PDF-verified focal lengths + squeeze + image circle + mount; mechanical fields (weight, length, T-stop range, MOD, gear specs) currently estimated and marked in `_provenance.estimated_datasheet_pending` until the official FF+ datasheet is pulled.
+- **6 factory body presets** — ARRI ALEXA 35 (S35 narrative workhorse), ARRI ALEXA Mini LF (Roger Deakins's go-to since 2019), ARRI ALEXA 65 (Fraser/Sandgren prestige features), Sony VENICE 2 (dual-native ISO full frame), RED V-RAPTOR 8K VV (Vista Vision), Blackmagic URSA Cine 12K LF (12K large-format budget tier). Each preset auto-pairs body specs (sensor dims, resolution, ISO, weight) with the right Cooke anamorphic family (S35 for ALEXA 35, FF+ for the other five).
 - **Override package descriptor** — symlinks into Houdini's `packages/` dir to make this repo authoritative without polluting `~/houdini21.0/scripts/python/`. Hot-reload friendly.
 - **Procedural HDA builders** — pure Python under `scripts/python/cinema_camera/builders/`. Rebuild the entire 9-HDA pipeline from source via a one-line `rebuild_and_verify.py` driver, an in-Houdini builder import, or out-of-process Synapse.
 
@@ -75,9 +77,9 @@ If the value is `None`, Houdini didn't load the package — most commonly becaus
 **Solaris-native (recommended)** — in `/stage`:
 
 1. **Tab → Cinema Camera Rig LOP** — creates `cinema::camera_rig_lop::3.0`.
-2. Look at the top of the parm panel — `Look Through Camera` button + `Show Nodal Point Guide` toggle sit above the six tabs (Lens / Distortion / Camera Body / Biomechanics / Post-Processing / Pipeline).
+2. Look at the parm panel — the first tab is **Preset** (six 2026 professional bodies). Pick one and click `Apply Preset` to bulk-fill body + lens parms; the remaining tabs (Lens / Distortion / Camera Body / Biomechanics / Post-Processing / Pipeline) become the override layer. `Look Through Camera` button + `Show Nodal Point Guide` toggle sit at the very top.
 3. Click `Look Through Camera` — the Solaris viewport locks to `/CinemaRig/FluidHead/Body/Sensor`.
-4. Try a focal length that didn't exist before this release: change `Lens ID` to `cooke_ana_i_s35_25mm` or `cooke_ana_i_s35_180mm` and update the focal length to match.
+4. Try a focal length that didn't exist before this release: change `Lens ID` to `cooke_ana_i_s35_25mm` or `cooke_ana_i_ff_plus_135mm` and update the focal length to match.
 
 **OBJ context** — in `/obj`:
 
@@ -240,6 +242,33 @@ The Copernicus 2.0 preview satellites (orange) are **deliberately disconnected**
 
 ---
 
+## Camera body presets (six 2026 professional cinema rigs)
+
+| # | Body | Format | Native res | Sensor (mm) | Native ISO | Rig wt | Cooke line | Color science |
+|---|------|--------|------------|-------------|------------|--------|------------|---------------|
+| 1 | ARRI ALEXA 35           | S35       | 4608 × 3164  | 27.99 × 19.22 | 800        | 3.9 kg  | S35 (2.0×)   | ARRI LogC4               |
+| 2 | ARRI ALEXA Mini LF      | LF        | 4448 × 3096  | 36.70 × 25.54 | 800        | 3.5 kg  | FF+ (1.8×)   | ARRI LogC3               |
+| 3 | ARRI ALEXA 65           | 65mm      | 6560 × 3102  | 54.12 × 25.58 | 800        | 11.2 kg | FF+ (1.8×)   | ARRI LogC3               |
+| 4 | Sony VENICE 2           | FF        | 8640 × 5760  | 35.90 × 24.00 | 800 / 3200 | 4.5 kg  | FF+ (1.8×)   | Sony S-Log3 S-Gamut3.Cine |
+| 5 | RED V-RAPTOR 8K VV      | VV (17:9) | 8192 × 4320  | 40.96 × 21.60 | 800        | 2.5 kg  | FF+ (1.8×)   | REDWideGamutRGB / Log3G10 |
+| 6 | Blackmagic URSA Cine 12K LF | LF    | 12288 × 8064 | 36.00 × 24.00 | 800        | 4.5 kg  | FF+ (1.8×)   | Blackmagic Wide Gamut Gen 5 |
+
+Rig weight is the *operational* mass (body + EVF + battery + handles) used by the biomechanics solver's auto-derive — heavier rigs get higher damping ratios and more lag. ALEXA 65 at 11.2 kg yields a noticeably more inertial feel than the RED V-RAPTOR at 2.5 kg.
+
+The preset is applied via the **Preset** tab at the front of the HDA's parm panel: pick a camera in the dropdown, click **Apply Preset**, and `body_id`, `sensor_*_mm`, `resolution_*`, `native_iso`, `exposure_index`, `combined_weight_kg`, `focal_length_mm`, `t_stop`, `squeeze_ratio`, `effective_squeeze`, and `lens_id` bulk-fill from `cinema_camera.presets.CAMERA_PRESETS` (the single source of truth, also used by offline Python tooling).
+
+Body specs are also addressable from the Python API:
+
+```python
+from cinema_camera.registry import get_body, list_bodies
+print(list_bodies())
+# ['arri_alexa_35', 'arri_alexa_65', 'arri_alexa_mini_lf',
+#  'blackmagic_ursa_cine_12k_lf', 'red_v_raptor_8k_vv', 'sony_venice_2']
+state = get_body("arri_alexa_mini_lf")  # CameraState dataclass instance
+```
+
+---
+
 ## Cooke Anamorphic/i S35 lens registry
 
 All 10 primes from the official datasheet (`COOKE_Anamorphic-i-S35_Specification_030623.pdf`):
@@ -284,6 +313,22 @@ flowchart LR
 PDF-authoritative fields: focal length, T-stop range, MOD, length, front Ø, weight, filter thread, gear specs, image circle, squeeze ratio.
 
 Heuristic fields (Cooke does not publish these — replace via Wolfram fits when ready): entrance pupil offset (`length × 0.5`), squeeze breathing curve (`deficit ∝ √(50/focal)`), distortion coefficients (`k1 ∝ -0.020 √(50/focal)`), squeeze uniformity. Each heuristic carries a `_provenance` annotation in the JSON so the model used is explicit.
+
+### Cooke Anamorphic/i Full Frame Plus (FF+) — skeleton
+
+A sibling line for full-frame and larger sensors (LF, Vista Vision, 65mm). Source: `scripts/python/cinema_camera/lenses/cooke_anamorphic_i_ff_plus.py`. The 7 emitted JSONs (`cooke_ana_i_ff_plus_25mm.json` through `_135mm.json`) currently encode:
+
+- **PDF-authoritative:** `manufacturer`, `series`, `focal_length_mm`, `squeeze_ratio` (1.8×), `image_circle_mm` (46), `mount` (PL or LPL).
+- **Estimated, datasheet pending:** T-stop range, MOD, weight, length, front Ø, filter thread, gear specs, FOV reference. Listed under `_provenance.estimated_datasheet_pending` in each JSON.
+- **Heuristic models** mirror the S35 family but with reduced coefficients (FF+ optics are flatter; deficit coefficient 0.10 vs S35's 0.15; distortion k1 −0.015 vs S35's −0.020). Reasoning lives in `_provenance.heuristic`.
+
+Re-emit JSONs from the Python source after editing:
+
+```bash
+python scripts/python/cinema_camera/lenses/_emit_lens_jsons.py --family ff_plus
+```
+
+When the official Cooke FF+ datasheet PDF is retrieved, swap the estimated values into the Python source and re-emit — the same workflow that built the S35 registry from `COOKE_Anamorphic-i-S35_Specification_030623.pdf`.
 
 ---
 
@@ -394,6 +439,7 @@ The OBJ orchestrator (`cinema::camera_rig::3.0`) is no longer treated as depreca
 
 | Version | Notes |
 |---|---|
+| v3.2 | Six 2026 professional camera body presets (ARRI ALEXA 35 / Mini LF / 65, Sony VENICE 2, RED V-RAPTOR 8K VV, Blackmagic URSA Cine 12K LF); Cooke Anamorphic/i Full Frame Plus (FF+) skeleton lens family; "Preset" tab at front of HDA parm panel with single-click Apply |
 | v3.1 | Copernicus 2.0 preview satellites shipping; unified CineCamera UX (camera frustum on load, Look Through button, toggleable nodal guide); single-paste `rebuild_and_verify.py` driver; 38-assertion verify suite |
 | v3.0 | Repo-authoritative override; PDF-grounded Cooke lineup; Solaris-native LOP rig with biomechanics; HDA type-name versioning fix |
 | v2.0 | OBJ-context orchestrator + 4 satellite HDAs; lived in OneDrive `houdini21.0/`; dual-path sync required |

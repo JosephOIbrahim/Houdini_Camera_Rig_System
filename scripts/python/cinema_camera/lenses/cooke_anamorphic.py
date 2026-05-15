@@ -136,5 +136,8 @@ def _load_cooke_anamorphic(json_path: Path) -> LensSpec:
     return lens.spec
 
 
-# Auto-register on import
-register_lens("cooke_ana_i_s35", _load_cooke_anamorphic)
+# Auto-register on import. The loader is generic over the Cooke schema --
+# it parses any JSON matching cooke_ana_i_*.json regardless of squeeze ratio
+# or image circle. Both family providers share the same loader.
+register_lens("cooke_ana_i_s35",     _load_cooke_anamorphic)
+register_lens("cooke_ana_i_ff_plus", _load_cooke_anamorphic)

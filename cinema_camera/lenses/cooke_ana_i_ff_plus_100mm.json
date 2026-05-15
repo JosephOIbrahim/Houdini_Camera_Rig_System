@@ -1,0 +1,115 @@
+{
+  "lens_id": "cooke_ana_i_ff_plus_100mm",
+  "manufacturer": "Cooke",
+  "series": "Anamorphic/i Full Frame Plus",
+  "focal_length_mm": 100.0,
+  "t_stop_range": [
+    2.3,
+    22.0
+  ],
+  "iris_blades": 11,
+  "close_focus_m": 1.1,
+  "image_circle_mm": 46.0,
+  "squeeze_ratio": 1.8,
+  "mount": "PL or LPL",
+  "mechanics": {
+    "weight_kg": 4.8,
+    "length_mm": 250.0,
+    "front_diameter_mm": 136.0,
+    "filter_thread": "M131x0.75",
+    "focus_ring": {
+      "rotation_deg": 300.0,
+      "gear_teeth": 140,
+      "gear_module": 0.8
+    },
+    "iris_ring": {
+      "rotation_deg": 90.0,
+      "gear_teeth": 134,
+      "gear_module": 0.8
+    },
+    "entrance_pupil_offset_mm": 125.0
+  },
+  "fov_pdf_reference": {
+    "max_horizontal_deg": 35.8,
+    "max_vertical_deg": 13.7
+  },
+  "squeeze_breathing": [
+    {
+      "focus_m": 1.1,
+      "effective_squeeze": 1.7293
+    },
+    {
+      "focus_m": 1.98,
+      "effective_squeeze": 1.7576
+    },
+    {
+      "focus_m": 4.4,
+      "effective_squeeze": 1.7823
+    },
+    {
+      "focus_m": 13.2,
+      "effective_squeeze": 1.7929
+    },
+    {
+      "focus_m": "infinity",
+      "effective_squeeze": 1.8
+    }
+  ],
+  "distortion": {
+    "k1": -0.0106,
+    "k2": 0.001,
+    "k3": 0.0,
+    "p1": 0.0,
+    "p2": 0.0,
+    "squeeze_uniformity": 0.96
+  },
+  "breathing": [
+    {
+      "focus_m": 1.1,
+      "fov_shift_pct": 2.121
+    },
+    {
+      "focus_m": 2.75,
+      "fov_shift_pct": 0.742
+    },
+    {
+      "focus_m": "infinity",
+      "fov_shift_pct": 0.0
+    }
+  ],
+  "_provenance": {
+    "pdf_source": "PENDING -- Cooke Anamorphic/i FF+ datasheet not yet retrieved",
+    "pdf_version": "pending_2026",
+    "pdf_authoritative": [
+      "manufacturer",
+      "series",
+      "focal_length_mm",
+      "squeeze_ratio",
+      "image_circle_mm",
+      "mount"
+    ],
+    "estimated_datasheet_pending": [
+      "t_stop_range",
+      "iris_blades",
+      "close_focus_m",
+      "mechanics.weight_kg",
+      "mechanics.length_mm",
+      "mechanics.front_diameter_mm",
+      "mechanics.filter_thread",
+      "mechanics.focus_ring.rotation_deg",
+      "mechanics.focus_ring.gear_teeth",
+      "mechanics.iris_ring.rotation_deg",
+      "mechanics.iris_ring.gear_teeth",
+      "fov_pdf_reference.max_horizontal_deg",
+      "fov_pdf_reference.max_vertical_deg"
+    ],
+    "heuristic": {
+      "mechanics.entrance_pupil_offset_mm": "optical_center (length_mm * 0.5) -- replace via Wolfram W4 fit_pupil_shift",
+      "squeeze_breathing": "focal_scaled (deficit_at_MOD = 0.10 * sqrt(50/focal), reduced from S35's 0.15 -- replace via Wolfram fit when FF+ test data available)",
+      "breathing": "focal_scaled (shift_at_MOD pct = 3.0 * sqrt(50/focal), reduced from S35's 4.0)",
+      "distortion.k1": "focal_scaled (-0.015 * sqrt(50/focal), reduced from S35's -0.020 -- FF+ optics flatter)",
+      "distortion.k2": "focal_scaled (0.002 * (50/focal))",
+      "distortion.squeeze_uniformity": "focal_scaled (0.94 + 0.0002*focal, clamped [0.92, 0.97])"
+    }
+  }
+}
