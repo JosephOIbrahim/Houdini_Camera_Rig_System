@@ -11,7 +11,7 @@ Steps:
   Mile 0.5: (Optional) Run probe_copernicus.py diagnostic. Set RUN_PROBE = True
             below to enable -- useful on a fresh machine to confirm which COP
             node types Houdini exposes before building the v2 satellites.
-  Mile 1:   Build all 9 HDAs via build_all_v3()
+  Mile 1:   Build all 10 HDAs via build_all_v3()
             (legacy cop2 + Copernicus 2.0 preview + LOP + OBJ orchestrators).
   Mile 2:   Reload HDA files in the live session so the latest definitions
             are picked up by any already-loaded instances.
@@ -93,9 +93,9 @@ if RUN_PROBE:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Mile 1: Build all 9 HDAs
+# Mile 1: Build all 10 HDAs
 # ──────────────────────────────────────────────────────────────────────
-_banner("Mile 1 / 4: Building all 9 HDAs via build_all_v3()")
+_banner("Mile 1 / 4: Building all 10 HDAs via build_all_v3()")
 
 _build_results = {}
 try:

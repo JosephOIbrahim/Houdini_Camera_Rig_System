@@ -5,17 +5,38 @@ Builds the HDA parameter interface used by both the OBJ orchestrator
 (cinema::camera_rig::3.0) and the LOP builder (cinema::camera_rig_lop::3.0).
 
 Extracted from build_camera_rig_orchestrator.py to avoid duplication.
+
+All script callbacks are thin shims over cinema_camera.hda_callbacks --
+logic baked into HDA callback strings cannot be hot-fixed, package code
+can. Keep the shims dumb.
 """
 
 from __future__ import annotations
 
 
-def build_camera_rig_parm_templates():
-    """
-    Build the full 5-tab parameter interface for the cinema camera rig.
+def _callback_shim(function_name: str) -> str:
+    """Build the standard bootstrap-and-dispatch callback string."""
+    return (
+        "import os, sys\n"
+        "repo = os.environ.get('CINEMA_CAMERA_REPO', '')\n"
+        "sp = os.path.join(repo, 'scripts', 'python')\n"
+        "if repo and sp not in sys.path:\n"
+        "    sys.path.insert(0, sp)\n"
+        "from cinema_camera import hda_callbacks\n"
+        "hda_callbacks.{fn}(kwargs.get('node'))\n"
+    ).format(fn=function_name)
 
-    Returns a list of hou.FolderParmTemplate objects (one per tab) that can
-    be appended to any HDA's parmTemplateGroup.
+
+def build_camera_rig_parm_templates(context: str = "obj"):
+    """
+    Build the full tabbed parameter interface for the cinema camera rig.
+
+    context: "obj" for the OBJ orchestrator (adds keyframable fluid-head
+    target pan/tilt/roll that drive the CHOP biomechanics chain), "lop"
+    for the Solaris rig (adds input_camera_path for the USD spring filter).
+
+    Returns a list of parm templates (top-level controls + one
+    FolderParmTemplate per tab) to append to an HDA's parmTemplateGroup.
 
     Must be called inside a live Houdini session (imports hou).
     """
@@ -24,34 +45,9 @@ def build_camera_rig_parm_templates():
     # ═══════════════════════════════════════════════════════
     # TOP-LEVEL CONTROLS (sit above the tab folders)
     # ═══════════════════════════════════════════════════════
-    # Python callback that drives "Look Through Camera" for both OBJ and LOP
-    # HDAs. The callback inspects its host node's category to pick the right
-    # camera target: an inner cam node in /obj, or a USD camera prim in /stage.
-    _look_through_cb = (
-        "import hou\n"
-        "n = kwargs.get('node')\n"
-        "if n is None:\n"
-        "    return\n"
-        "sv = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)\n"
-        "if sv is None:\n"
-        "    return\n"
-        "vp = sv.curViewport()\n"
-        "cat = n.type().category().name()\n"
-        "if cat == 'Object':\n"
-        "    inner = n.node('cinema_camera')\n"
-        "    if inner is not None:\n"
-        "        vp.setCamera(inner)\n"
-        "elif cat == 'Lop':\n"
-        "    rig = n.evalParm('usd_camera_path') or '/CinemaRig'\n"
-        "    if rig == '/CinemaRig/Camera':\n"
-        "        rig = '/CinemaRig'\n"
-        "    sv.setPwd(n)\n"
-        "    vp.setCamera(rig + '/FluidHead/Body/Sensor')\n"
-    )
-
     look_through = hou.ButtonParmTemplate(
         "look_through_camera", "Look Through Camera",
-        script_callback=_look_through_cb,
+        script_callback=_callback_shim("look_through"),
         script_callback_language=hou.scriptLanguage.Python,
         join_with_next=True,
         help="Lock the active SceneViewer to this rig's camera. Works in /obj "
@@ -74,12 +70,9 @@ def build_camera_rig_parm_templates():
     # ═══════════════════════════════════════════════════════
     # TAB 0: PRESET -- 2026 professional cinema body presets
     # ═══════════════════════════════════════════════════════
-    # Six factory presets pairing top 2026 cinema bodies with the Cooke
-    # anamorphic family. Selecting a preset and clicking "Apply Preset"
-    # bulk-fills the body + lens parms on the rest of the tabs.
-    #
-    # Preset data lives in cinema_camera.presets.CAMERA_PRESETS (single
-    # source of truth, imported by the callback at parm-set time).
+    # Preset data lives in cinema_camera.presets.CAMERA_PRESETS; the apply
+    # logic in cinema_camera.hda_callbacks.apply_preset (which chains
+    # apply_lens, so lens-derived parms follow the preset's lens pairing).
     preset_folder = hou.FolderParmTemplate(
         "preset_tab", "Preset",
         folder_type=hou.folderType.Tabs,
@@ -110,66 +103,14 @@ def build_camera_rig_parm_templates():
              "Anamorphic/i Full Frame Plus (1.8x).",
     ))
 
-    _APPLY_PRESET_CB = (
-        "import hou, os, sys\n"
-        "n = kwargs.get('node')\n"
-        "if n is None:\n"
-        "    return\n"
-        "# Make sure cinema_camera package is on sys.path -- callback may run\n"
-        "# in a context where the package env vars haven't been read yet.\n"
-        "repo = os.environ.get('CINEMA_CAMERA_REPO', '')\n"
-        "if repo:\n"
-        "    sp = os.path.join(repo, 'scripts', 'python')\n"
-        "    if sp not in sys.path:\n"
-        "        sys.path.insert(0, sp)\n"
-        "try:\n"
-        "    from cinema_camera.presets import get_preset\n"
-        "except ImportError as e:\n"
-        "    hou.ui.displayMessage('Preset import failed: ' + str(e))\n"
-        "    return\n"
-        "key = n.parm('camera_preset').evalAsString()\n"
-        "try:\n"
-        "    p = get_preset(key)\n"
-        "except KeyError as e:\n"
-        "    hou.ui.displayMessage(str(e))\n"
-        "    return\n"
-        "# Body parms\n"
-        "for parm_name, value in (\n"
-        "    ('body_id',               p['body_id']),\n"
-        "    ('sensor_width_mm',       p['sensor_width_mm']),\n"
-        "    ('sensor_height_mm',      p['sensor_height_mm']),\n"
-        "    ('resolution_x',          p['resolution_x']),\n"
-        "    ('resolution_y',          p['resolution_y']),\n"
-        "    ('native_iso',            p['native_iso']),\n"
-        "    ('exposure_index',        p['native_iso']),\n"
-        "    ('combined_weight_kg',    p['body_weight_kg']),\n"
-        "    ('focal_length_mm',       p['default_focal_length_mm']),\n"
-        "    ('t_stop',                p['default_t_stop']),\n"
-        "    ('squeeze_ratio',         p['squeeze_ratio']),\n"
-        "    ('effective_squeeze',     p['squeeze_ratio']),\n"
-        "):\n"
-        "    pp = n.parm(parm_name)\n"
-        "    if pp is not None:\n"
-        "        pp.set(value)\n"
-        "# Lens-family-aware lens_id (uses default focal as integer mm)\n"
-        "f_mm = int(p['default_focal_length_mm'])\n"
-        "lens_id = '{0}_{1}mm'.format(p['lens_family'], f_mm)\n"
-        "lens_id_parm = n.parm('lens_id')\n"
-        "if lens_id_parm is not None:\n"
-        "    lens_id_parm.set(lens_id)\n"
-        "# Status feedback\n"
-        "label_parm = n.parm('preset_status')\n"
-        "if label_parm is not None:\n"
-        "    label_parm.set('Applied: ' + p['label'])\n"
-    )
-
     preset_folder.addParmTemplate(hou.ButtonParmTemplate(
         "apply_preset", "Apply Preset",
-        script_callback=_APPLY_PRESET_CB,
+        script_callback=_callback_shim("apply_preset"),
         script_callback_language=hou.scriptLanguage.Python,
-        help="Bulk-fill body + lens parms from the selected preset. "
-             "After applying you can override any individual parm on the "
-             "other tabs.",
+        help="Bulk-fill body + lens parms from the selected preset, then "
+             "load the paired lens spec (distortion, pupil offset, rig "
+             "weight). After applying you can override any individual parm "
+             "on the other tabs.",
     ))
 
     preset_folder.addParmTemplate(hou.StringParmTemplate(
@@ -195,25 +136,9 @@ def build_camera_rig_parm_templates():
         "lens_tab", "Lens",
         folder_type=hou.folderType.Tabs,
     )
-    # Common cinema prime focal lengths (Cooke + industry standard). Picking
-    # one auto-fills focal_length_mm. The free slider below remains for
-    # fine-tuning between primes or for non-standard focal lengths.
-    _FOCAL_PRESET_CB = (
-        "import hou\n"
-        "n = kwargs.get('node')\n"
-        "if n is None:\n"
-        "    return\n"
-        "val = n.parm('focal_length_preset').evalAsString()\n"
-        "if val == 'custom':\n"
-        "    return\n"
-        "try:\n"
-        "    f = float(val)\n"
-        "except ValueError:\n"
-        "    return\n"
-        "p = n.parm('focal_length_mm')\n"
-        "if p is not None:\n"
-        "    p.set(f)\n"
-    )
+    # Common cinema prime focal lengths. Picking one auto-fills
+    # focal_length_mm AND retargets lens_id to the family's prime at that
+    # focal length when one exists (hda_callbacks.focal_preset_changed).
     lens_folder.addParmTemplate(hou.MenuParmTemplate(
         "focal_length_preset", "Common Prime",
         menu_items=(
@@ -228,17 +153,35 @@ def build_camera_rig_parm_templates():
             "180mm (tele)", "200mm (tele)", "300mm (long tele)",
         ),
         default_value=7,   # 50mm
-        script_callback=_FOCAL_PRESET_CB,
+        script_callback=_callback_shim("focal_preset_changed"),
         script_callback_language=hou.scriptLanguage.Python,
-        help="Pick from common cinema prime focal lengths -- auto-fills the "
-             "Focal Length (mm) slider below. Choose 'Custom' to use the "
-             "free slider directly.",
+        help="Pick from common cinema prime focal lengths -- fills the "
+             "Focal Length slider and, when the current lens family has a "
+             "prime at that length, switches Lens ID to it (loading its "
+             "distortion + squeeze curves). 'Custom' frees the slider.",
     ))
     lens_folder.addParmTemplate(hou.StringParmTemplate(
         "lens_id", "Lens ID", 1,
         default_value=("cooke_ana_i_s35_50mm",),
-        help="Lens identifier from registry. Used to load LensSpec JSON. "
-             "Auto-filled by the Preset tab; manual edits override.",
+        script_callback=_callback_shim("apply_lens"),
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Lens identifier resolved through cinema_camera.registry "
+             "(JSON spec under cinema_camera/lenses/). Editing it loads "
+             "the spec; the Preset tab fills it automatically.",
+    ))
+    lens_folder.addParmTemplate(hou.ButtonParmTemplate(
+        "apply_lens", "Apply Lens",
+        script_callback=_callback_shim("apply_lens"),
+        script_callback_language=hou.scriptLanguage.Python,
+        join_with_next=True,
+        help="Re-load the LensSpec for the current Lens ID: fills focal "
+             "length, squeeze, Brown-Conrady distortion, entrance pupil "
+             "offset, and combined rig weight.",
+    ))
+    lens_folder.addParmTemplate(hou.StringParmTemplate(
+        "lens_status", "Lens Status", 1,
+        default_value=("(lens spec not loaded yet -- click Apply Lens)",),
+        help="Read-only label for the last lens-spec load.",
     ))
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "focal_length_mm", "Focal Length (mm)", 1,
@@ -251,7 +194,8 @@ def build_camera_rig_parm_templates():
         default_value=(2.8,), min=1.0, max=22.0,
         help="T-stop = f-stop / lens transmission. Lower = more light, shallower DOF. "
              "Unlike f-stop, T-stop accounts for light lost in glass elements. "
-             "Cooke anamorphic primes: T2.3 wide-open, T22 stopped down.",
+             "Cooke anamorphic primes: T2.3 wide-open, T22 stopped down. "
+             "Clamped to the loaded lens's physical range at cook time.",
     ))
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "shutter_angle_deg", "Shutter Angle (deg)", 1,
@@ -264,7 +208,11 @@ def build_camera_rig_parm_templates():
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "focus_distance_m", "Focus Distance (m)", 1,
         default_value=(3.0,), min=0.3, max=1000.0,
-        help="Focus distance. Drives dynamic squeeze and DOF.",
+        script_callback=_callback_shim("focus_changed"),
+        script_callback_language=hou.scriptLanguage.Python,
+        help="Focus distance. Drives dynamic squeeze and DOF. Clamped to "
+             "the loaded lens's close focus (MOD) at cook time. Editing it "
+             "refreshes Effective Squeeze from the lens breathing curve.",
     ))
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "squeeze_ratio", "Squeeze Ratio", 1,
@@ -274,8 +222,12 @@ def build_camera_rig_parm_templates():
     eff_squeeze_pt = hou.FloatParmTemplate(
         "effective_squeeze", "Effective Squeeze", 1,
         default_value=(2.0,), min=1.0, max=2.0,
-        help="Focus-dependent squeeze (computed from SqueezeBreathingCurve). "
-             "Read-only -- driven by focus_distance_m and squeeze breathing curve.",
+        help="Focus-dependent squeeze (mumps). When the Lens ID resolves, "
+             "the LOP rig computes this AT COOK TIME from the lens's "
+             "squeeze-breathing curve and Focus Distance (so animated "
+             "focus pulls breathe correctly); this parm then only feeds "
+             "the OBJ post satellites. Without a resolved lens, this "
+             "manual value is used everywhere.",
     )
     eff_squeeze_pt.setConditional(
         hou.parmCondType.DisableWhen, '{ lens_id != "" }'
@@ -284,21 +236,15 @@ def build_camera_rig_parm_templates():
     lens_folder.addParmTemplate(hou.FloatParmTemplate(
         "entrance_pupil_offset_mm", "Entrance Pupil Offset (mm)", 1,
         default_value=(125.0,), min=0.0, max=500.0,
-        help="Distance from sensor to nodal point. Critical for parallax-correct pans.",
-    ))
-    lens_folder.addParmTemplate(hou.LabelParmTemplate(
-        "label_pupil_pivot", "Pivot Offset",
-        column_labels=("Entrance pupil pivot visible on null in viewport",),
+        help="Distance from sensor to nodal point (toward the scene). "
+             "Critical for parallax-correct pans. Auto-filled from the "
+             "lens spec by Apply Lens.",
     ))
     folders.append(lens_folder)
 
     # ═══════════════════════════════════════════════════════
     # TAB 2: DISTORTION
     # ═══════════════════════════════════════════════════════
-    # Artist-friendly: by default the raw Brown-Conrady coefficients (K1-P2)
-    # are hidden behind "Show Advanced". Most artists work with the lens-spec
-    # values auto-loaded from the lens_id; only TDs / pre-vis-to-comp pipelines
-    # need to hand-edit coefficients.
     dist_folder = hou.FolderParmTemplate(
         "distortion_tab", "Distortion",
         folder_type=hou.folderType.Tabs,
@@ -306,10 +252,10 @@ def build_camera_rig_parm_templates():
 
     dist_folder.addParmTemplate(hou.LabelParmTemplate(
         "label_distortion",
-        "Distortion values are auto-loaded from the lens spec (lens_id). "
-        "Use Squeeze Uniformity for anamorphic edge falloff -- the most "
-        "common artist-facing tweak. Enable 'Show Advanced' below to edit "
-        "raw Brown-Conrady coefficients directly.",
+        "Distortion values load from the lens spec via Apply Lens / Apply "
+        "Preset. Use Squeeze Uniformity for anamorphic edge falloff -- the "
+        "most common artist-facing tweak. Enable 'Show Advanced' below to "
+        "edit raw Brown-Conrady coefficients directly.",
     ))
 
     dist_folder.addParmTemplate(hou.FloatParmTemplate(
@@ -326,7 +272,7 @@ def build_camera_rig_parm_templates():
         "show_advanced_distortion", "Show Advanced (Brown-Conrady)",
         default_value=False,
         help="Reveal raw Brown-Conrady distortion coefficients (K1, K2, K3, "
-             "P1, P2). Normally auto-loaded from the lens spec; expose for "
+             "P1, P2). Normally loaded from the lens spec; expose for "
              "manual override during plate-matching or pre-vis-to-comp work.",
     ))
 
@@ -373,24 +319,24 @@ def build_camera_rig_parm_templates():
     ))
     body_folder.addParmTemplate(hou.FloatParmTemplate(
         "sensor_width_mm", "Sensor Width (mm)", 1,
-        default_value=(28.25,),
-        help="Active sensor width. ALEXA 35: 28.25mm (Open Gate).",
+        default_value=(27.99,),
+        help="Active sensor width. ALEXA 35: 27.99mm (4.6K 3:2 Open Gate).",
     ))
     body_folder.addParmTemplate(hou.FloatParmTemplate(
         "sensor_height_mm", "Sensor Height (mm)", 1,
-        default_value=(18.17,),
-        help="Active sensor height.",
+        default_value=(19.22,),
+        help="Active sensor height. ALEXA 35: 19.22mm (4.6K 3:2 Open Gate).",
     ))
     body_folder.addParmTemplate(hou.IntParmTemplate(
         "resolution_x", "Resolution X", 1,
-        default_value=(4608,), min=256, max=8192,
-        help="Horizontal pixel count. ALEXA 35 6K Open Gate: 4608. "
+        default_value=(4608,), min=256, max=16384,
+        help="Horizontal pixel count. ALEXA 35 4.6K Open Gate: 4608. "
              "Drives Karma render resolution.",
     ))
     body_folder.addParmTemplate(hou.IntParmTemplate(
         "resolution_y", "Resolution Y", 1,
-        default_value=(3164,), min=256, max=8192,
-        help="Vertical pixel count. ALEXA 35 6K Open Gate: 3164. "
+        default_value=(3164,), min=256, max=16384,
+        help="Vertical pixel count. ALEXA 35 4.6K Open Gate: 3164. "
              "Drives Karma render resolution.",
     ))
     body_folder.addParmTemplate(hou.IntParmTemplate(
@@ -419,18 +365,50 @@ def build_camera_rig_parm_templates():
         default_value=True,
         help="When on, camera motion is filtered through spring/lag/shake solver.",
     ))
-    bio_folder.addParmTemplate(hou.StringParmTemplate(
-        "input_camera_path", "Input Camera Prim", 1,
-        default_value=("",),
-        help="USD prim path with xformOp:rotateXYZ animation to filter through "
-             "the spring/lag solver. Output is written to /CinemaRig/FluidHead. "
-             "Leave empty to skip the spring filter (handheld shake still applies "
-             "if enabled). Common pattern: point at a Houdini-authored cam prim.",
-    ))
+
+    if context == "obj":
+        # Keyframable fluid-head targets: the operator's intended pan/tilt/
+        # roll. The CHOP chain fetches these, applies lag -> spring (+
+        # optional shake), and the filtered result drives the fluid_head
+        # null inside the rig. Keyframe THESE, not the HDA transform (the
+        # HDA transform is tripod placement).
+        bio_folder.addParmTemplate(hou.LabelParmTemplate(
+            "label_targets",
+            "Keyframe the targets below for pan/tilt/roll moves; the "
+            "biomechanics filter drives the fluid head from them. The "
+            "node transform places the tripod.",
+        ))
+        for parm_name, label, parm_help in (
+            ("target_pan_deg", "Target Pan (deg)",
+             "Operator's intended pan (Y rotation). Filtered through the "
+             "spring/lag solver onto the fluid head."),
+            ("target_tilt_deg", "Target Tilt (deg)",
+             "Operator's intended tilt (X rotation). Filtered through the "
+             "spring/lag solver onto the fluid head."),
+            ("target_roll_deg", "Target Roll (deg)",
+             "Dutch/roll (Z rotation). Filtered through the spring/lag "
+             "solver onto the fluid head."),
+        ):
+            bio_folder.addParmTemplate(hou.FloatParmTemplate(
+                parm_name, label, 1,
+                default_value=(0.0,), min=-180.0, max=180.0,
+                help=parm_help,
+            ))
+    else:
+        bio_folder.addParmTemplate(hou.StringParmTemplate(
+            "input_camera_path", "Input Camera Prim", 1,
+            default_value=("",),
+            help="USD prim path with xformOp:rotateXYZ animation to filter through "
+                 "the spring/lag solver. Output is written to /CinemaRig/FluidHead. "
+                 "Leave empty to skip the spring filter (handheld shake still applies "
+                 "if enabled). Common pattern: point at a Houdini-authored cam prim.",
+        ))
+
     bio_folder.addParmTemplate(hou.FloatParmTemplate(
         "combined_weight_kg", "Combined Weight (kg)", 1,
         default_value=(7.5,), min=1.0, max=30.0,
-        help="Body + lens weight. Auto-computed from body_id + lens_id specs.",
+        help="Body + lens weight. Filled by Apply Preset / Apply Lens "
+             "(body weight from presets + lens weight from the spec).",
     ))
     bio_folder.addParmTemplate(hou.FloatParmTemplate(
         "moment_arm_cm", "Moment Arm (cm)", 1,
@@ -438,15 +416,12 @@ def build_camera_rig_parm_templates():
         help="Distance from fluid head pivot to camera CG in cm. "
              "Longer arms (big lenses) increase rotational inertia and lag.",
     ))
-    # auto_derive moved BEFORE the manual parms so it's the first decision.
-    # When True (default), manual spring/damping/lag/shake parms hide --
-    # they're computed automatically from combined_weight_kg. Toggle off to
-    # reveal them for manual override.
     bio_folder.addParmTemplate(hou.ToggleParmTemplate(
         "auto_derive", "Auto-Derive from Rig Weight",
         default_value=True,
         help="Compute spring constant, damping, lag, and handheld shake from "
-             "combined_weight_kg using physically-grounded formulas. "
+             "combined_weight_kg using physically-grounded formulas "
+             "(cinema_camera.biomechanics.auto_derive_from_weight). "
              "Turn off to reveal manual sliders for spring/damping/lag/shake.",
     ))
 
@@ -489,37 +464,6 @@ def build_camera_rig_parm_templates():
              "manually (only visible when Auto-Derive is off).",
     ))
 
-    # Handheld style preset menu: choose a shooting style, click Apply, and
-    # shake_amplitude_deg + shake_frequency_hz get filled with industry-typical
-    # values. Custom = leave the sliders alone for hand-tuning.
-    _HANDHELD_STYLE_CB = (
-        "import hou\n"
-        "n = kwargs.get('node')\n"
-        "if n is None:\n"
-        "    return\n"
-        "style = n.parm('handheld_style').evalAsString()\n"
-        "presets = {\n"
-        "    'custom':     None,\n"
-        "    'tripod':     (0.05, 3.0),\n"
-        "    'steadicam':  (0.10, 4.0),\n"
-        "    'operator':   (0.20, 5.5),\n"
-        "    'handheld':   (0.40, 6.5),\n"
-        "    'verite':     (0.80, 8.0),\n"
-        "}\n"
-        "vals = presets.get(style)\n"
-        "if vals is None:\n"
-        "    return\n"
-        "amp, freq = vals\n"
-        "amp_p  = n.parm('shake_amplitude_deg')\n"
-        "freq_p = n.parm('shake_frequency_hz')\n"
-        "if amp_p is not None:\n"
-        "    amp_p.set(amp)\n"
-        "if freq_p is not None:\n"
-        "    freq_p.set(freq)\n"
-        "en_p = n.parm('enable_handheld')\n"
-        "if en_p is not None and style != 'custom':\n"
-        "    en_p.set(True)\n"
-    )
     bio_folder.addParmTemplate(hou.MenuParmTemplate(
         "handheld_style", "Handheld Style",
         menu_items=("custom", "tripod", "steadicam", "operator", "handheld", "verite"),
@@ -531,8 +475,8 @@ def build_camera_rig_parm_templates():
             "Handheld (typical handheld, ~0.40deg / 6.5Hz)",
             "Verite (agitated documentary, ~0.80deg / 8Hz)",
         ),
-        default_value=3,  # "operator" -- pro handheld baseline
-        script_callback=_HANDHELD_STYLE_CB,
+        default_value=3,  # "operator" -- matches the amp/freq defaults below
+        script_callback=_callback_shim("handheld_style_changed"),
         script_callback_language=hou.scriptLanguage.Python,
         help="Pick a handheld shooting style -- fills shake amplitude + "
              "frequency below. Choose Custom to set sliders manually. "

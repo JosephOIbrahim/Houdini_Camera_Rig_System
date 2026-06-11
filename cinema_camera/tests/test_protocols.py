@@ -316,7 +316,9 @@ class TestJsonRoundtrip:
         assert spec.focal_length_mm == pytest.approx(50.0)
         assert spec.has_mechanics is True
         assert spec.mechanics.weight_kg == pytest.approx(3.6)
-        assert spec.mechanics.entrance_pupil_offset_mm == pytest.approx(125.0)
+        # Heuristic in the emitted JSON: length_mm * 0.5 = 205 * 0.5 = 102.5
+        # (see _provenance; replaced when the Wolfram W4 pupil fit lands).
+        assert spec.mechanics.entrance_pupil_offset_mm == pytest.approx(102.5)
         assert spec.effective_squeeze(0.85) == pytest.approx(1.85)
         assert spec.effective_squeeze(1e10) == pytest.approx(2.0)
 

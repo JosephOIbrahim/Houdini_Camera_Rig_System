@@ -1,17 +1,81 @@
 """
-Cinema Camera Rig v4.0 -- Karma CVEX Lens Shader Binding
+Cinema Camera Rig -- Karma Lens Shader Binding
 
-Binds Karma CVEX lens shader parameters to USD camera attributes.
-Runs inside the cinema::camera_rig::3.0 LOP HDA.
+Authors the camera-prim attributes Karma actually consumes for lens
+shaders. Format verified empirically against Houdini 21.0.729 (this is
+exactly what the Solaris Camera LOP authors when "Use lens shader" is on):
+
+    karma:camera:use_lensshader  (bool)   = True
+    karma:camera:lensshader      (string) = "opdef:/Vop/<op>?VflCode k v k v ..."
+
+The shader itself is a VOP HDA compiled from vex/include/karma_cinema_lens.vfl
+by builders/build_lens_shader_vop.py (vcc -O vop). The HDA lives in
+<repo>/otls/ which Houdini auto-loads via the override package.
+
+Verified on Karma CPU; Karma XPU lens-shader support is unverified -- the
+STMap AOV path remains the renderer-agnostic distortion route.
 
 Pillar D: Shader parameter binding layer.
 """
 
 from __future__ import annotations
 
-from pxr import Sdf, Usd, UsdShade
+from typing import Any, Optional
+
+from pxr import Sdf, Usd, UsdGeom
 
 from .protocols import CameraState, LensState
+
+# Operator type name of the compiled lens shader VOP (from the cvex function
+# name in karma_cinema_lens.vfl; vcc -O vop names the op after the function).
+LENS_SHADER_OP = "cinema_lens_shader"
+
+# HDA section referenced by the opdef string. vcc -O vop emits the source
+# into "CVexVflCode" -- and pointing the Camera LOP at our compiled VOP
+# authors exactly 'opdef:/Vop/cinema_lens_shader?CVexVflCode k v ...'
+# (verified empirically on 21.0.729). VOP-network HDAs use "VflCode"
+# instead; build_lens_shader_vop.py asserts the section exists.
+OPDEF_SECTION = "CVexVflCode"
+
+
+def _fmt_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, float):
+        return "%.9g" % value
+    return str(value)
+
+
+def build_lensshader_command(values: dict) -> str:
+    """Encode shader argument values into the opdef command string."""
+    args = " ".join(
+        "%s %s" % (name, _fmt_value(value)) for name, value in values.items()
+    )
+    base = "opdef:/Vop/%s?%s" % (LENS_SHADER_OP, OPDEF_SECTION)
+    return ("%s %s" % (base, args)) if args else base
+
+
+def author_lens_shader(
+    stage: Usd.Stage,
+    camera_path: str,
+    values: dict,
+) -> str:
+    """
+    Author the Karma lens shader binding on the camera prim from a flat
+    {shader_arg: value} dict. Returns the authored command string.
+    """
+    prim = stage.GetPrimAtPath(camera_path)
+    if not prim or not prim.IsValid():
+        raise ValueError(f"author_lens_shader: no prim at {camera_path}")
+
+    command = build_lensshader_command(values)
+    prim.CreateAttribute(
+        "karma:camera:use_lensshader", Sdf.ValueTypeNames.Bool
+    ).Set(True)
+    prim.CreateAttribute(
+        "karma:camera:lensshader", Sdf.ValueTypeNames.String
+    ).Set(command)
+    return command
 
 
 def bind_lens_shader(
@@ -19,54 +83,31 @@ def bind_lens_shader(
     camera_path: str,
     camera_state: CameraState,
     lens_state: LensState,
-) -> UsdShade.Shader:
+    entrance_pupil_offset_cm: Optional[float] = None,
+) -> str:
     """
-    Create and bind Karma CVEX lens shader to the camera prim.
+    Typed-state wrapper: derive shader argument values from CameraState /
+    LensState and author the binding. Returns the command string.
 
-    The shader reads attributes directly from the camera prim,
-    so parameters are automatically time-sampled when animated.
-
-    Returns the created UsdShade.Shader.
+    The shader reads focal/aperture/aspect/focus/fstop from Karma directly,
+    so only the cinema-specific arguments are encoded here. The entrance
+    pupil offset is converted to STAGE UNITS using metersPerUnit (ray
+    origins are in camera-space scene units).
     """
-    shader_path = f"{camera_path}/CinemaLensShader"
-    shader = UsdShade.Shader.Define(stage, shader_path)
+    pupil_cm = (entrance_pupil_offset_cm if entrance_pupil_offset_cm is not None
+                else lens_state.entrance_pupil_offset_cm)
+    meters_per_unit = UsdGeom.GetStageMetersPerUnit(stage) or 0.01
+    pupil_units = (pupil_cm / 100.0) / meters_per_unit
 
-    # Shader ID for Karma CVEX
-    shader.CreateIdAttr("karma:cvex:cinema_lens_shader")
-
-    # ── Bind lens parameters ─────────────────────────────
-    shader.CreateInput("focal_length_mm", Sdf.ValueTypeNames.Float).Set(
-        lens_state.spec.focal_length_mm
-    )
-    shader.CreateInput("effective_squeeze", Sdf.ValueTypeNames.Float).Set(
-        lens_state.effective_squeeze
-    )
-    shader.CreateInput("entrance_pupil_offset_cm", Sdf.ValueTypeNames.Float).Set(
-        lens_state.entrance_pupil_offset_cm
-    )
-    shader.CreateInput("sensor_width_mm", Sdf.ValueTypeNames.Float).Set(
-        camera_state.active_width_mm
-    )
-    shader.CreateInput("sensor_height_mm", Sdf.ValueTypeNames.Float).Set(
-        camera_state.active_height_mm
-    )
-
-    # Distortion coefficients
     d = lens_state.spec.distortion
-    shader.CreateInput("dist_k1", Sdf.ValueTypeNames.Float).Set(d.k1)
-    shader.CreateInput("dist_k2", Sdf.ValueTypeNames.Float).Set(d.k2)
-    shader.CreateInput("dist_k3", Sdf.ValueTypeNames.Float).Set(d.k3)
-    shader.CreateInput("dist_p1", Sdf.ValueTypeNames.Float).Set(d.p1)
-    shader.CreateInput("dist_p2", Sdf.ValueTypeNames.Float).Set(d.p2)
-    shader.CreateInput("dist_sq_uniformity", Sdf.ValueTypeNames.Float).Set(
-        d.squeeze_uniformity
-    )
-
-    # ── Bind shader to camera ────────────────────────────
-    camera_prim = stage.GetPrimAtPath(camera_path)
-    if camera_prim:
-        camera_prim.CreateAttribute(
-            "karma:lens:shader", Sdf.ValueTypeNames.String
-        ).Set(shader_path)
-
-    return shader
+    values = {
+        "effective_squeeze":     lens_state.effective_squeeze,
+        "dist_sq_uniformity":    d.squeeze_uniformity,
+        "entrance_pupil_offset": pupil_units,
+        "dist_k1": d.k1,
+        "dist_k2": d.k2,
+        "dist_k3": d.k3,
+        "dist_p1": d.p1,
+        "dist_p2": d.p2,
+    }
+    return author_lens_shader(stage, camera_path, values)

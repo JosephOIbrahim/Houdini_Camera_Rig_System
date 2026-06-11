@@ -16,6 +16,25 @@ from typing import Any, Optional
 
 
 # ════════════════════════════════════════════════════════════
+# RIG-WIDE CONVENTIONS
+# ════════════════════════════════════════════════════════════
+
+# Entrance pupil sign convention (single source of truth).
+#
+# Camera space looks down -Z. The entrance pupil (nodal point) sits IN FRONT
+# of the sensor, toward the scene, i.e. at NEGATIVE Z in camera/sensor space.
+#
+# Offsets (entrance_pupil_offset_mm/cm) are stored and passed everywhere as
+# UNSIGNED MAGNITUDES; the sign is applied at each authoring site:
+#   - usd_builder.py        EntrancePupil xform: translate z = SIGN * offset_cm
+#   - karma_cinema_lens.vfl ray origin:          P.z = -offset (literal negation,
+#                           equivalent to SIGN * offset for positive offsets)
+#   - OBJ orchestrator      the INVERSE: the cam sits BEHIND the pivot, so the
+#                           cam child gets tz = -SIGN * offset (positive Z).
+ENTRANCE_PUPIL_Z_SIGN = -1.0
+
+
+# ════════════════════════════════════════════════════════════
 # v3.0 FOUNDATION TYPES
 # ════════════════════════════════════════════════════════════
 

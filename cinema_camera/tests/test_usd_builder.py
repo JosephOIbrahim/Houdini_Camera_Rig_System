@@ -182,7 +182,17 @@ class TestEntrancePupilOffset:
         pupil = UsdGeom.Xform(stage.GetPrimAtPath("/World/Rig/FluidHead/Body/Sensor/EntrancePupil"))
         ops = pupil.GetOrderedXformOps()
         translate = ops[0].Get()
-        assert translate[2] == pytest.approx(12.5, abs=0.01)
+        # Camera looks down -Z; the pupil sits TOWARD THE SCENE: negative Z
+        # (protocols.ENTRANCE_PUPIL_Z_SIGN).
+        assert translate[2] == pytest.approx(-12.5, abs=0.01)
+
+    def test_pupil_offset_override(self, stage, alexa35_camera, lens_state_50mm, optical_result):
+        build_usd_camera_rig(stage, "/World/Rig", alexa35_camera, lens_state_50mm,
+                             optical_result, entrance_pupil_offset_cm=10.0)
+        sensor = stage.GetPrimAtPath("/World/Rig/FluidHead/Body/Sensor")
+        assert sensor.GetAttribute("cinema:rig:entrancePupilOffsetCm").Get() == pytest.approx(10.0)
+        pupil = UsdGeom.Xform(stage.GetPrimAtPath("/World/Rig/FluidHead/Body/Sensor/EntrancePupil"))
+        assert pupil.GetOrderedXformOps()[0].Get()[2] == pytest.approx(-10.0)
 
 
 class TestBodyOffset:
@@ -361,39 +371,71 @@ class TestEXRMetadata:
 # PILLAR D: SHADER BINDING
 # ════════════════════════════════════════════════════════════
 
+def _command_args(command: str) -> dict:
+    """Parse 'opdef:/Vop/op?Section k v k v ...' into {k: 'v'}."""
+    parts = command.split()
+    assert parts[0].startswith("opdef:/Vop/")
+    pairs = parts[1:]
+    assert len(pairs) % 2 == 0
+    return dict(zip(pairs[0::2], pairs[1::2]))
+
+
 class TestShaderBinding:
-    """Validate Karma CVEX lens shader binding."""
+    """Validate the karma:camera:lensshader opdef binding (the attribute
+    Karma actually consumes -- format verified against Houdini 21.0.729)."""
 
-    def test_shader_created(self, stage, alexa35_camera, lens_state_50mm):
+    def test_binding_attrs_authored(self, stage, alexa35_camera, lens_state_50mm):
         UsdGeom.Camera.Define(stage, "/World/Camera")
-        shader = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
-        assert shader.GetPrim().IsValid()
-        assert shader.GetIdAttr().Get() == "karma:cvex:cinema_lens_shader"
+        command = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
+        cam_prim = stage.GetPrimAtPath("/World/Camera")
+        assert cam_prim.GetAttribute("karma:camera:use_lensshader").Get() is True
+        assert cam_prim.GetAttribute("karma:camera:lensshader").Get() == command
+        assert command.startswith("opdef:/Vop/cinema_lens_shader?")
 
-    def test_shader_inputs(self, stage, alexa35_camera, lens_state_50mm):
+    def test_distortion_args(self, stage, alexa35_camera, lens_state_50mm):
         UsdGeom.Camera.Define(stage, "/World/Camera")
-        shader = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
-        assert shader.GetInput("focal_length_mm").Get() == pytest.approx(50.0)
-        assert shader.GetInput("sensor_width_mm").Get() == pytest.approx(27.99)
-        assert shader.GetInput("dist_k1").Get() == pytest.approx(-0.038)
-        assert shader.GetInput("dist_sq_uniformity").Get() == pytest.approx(0.92)
+        command = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
+        args = _command_args(command)
+        assert float(args["dist_k1"]) == pytest.approx(-0.038)
+        assert float(args["dist_p2"]) == pytest.approx(-0.001)
+        assert float(args["dist_sq_uniformity"]) == pytest.approx(0.92)
 
-    def test_shader_squeeze_from_lens_state(self, stage, alexa35_camera, lens_state_50mm):
+    def test_squeeze_from_lens_state(self, stage, alexa35_camera, lens_state_50mm):
         UsdGeom.Camera.Define(stage, "/World/Camera")
-        shader = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
-        squeeze = shader.GetInput("effective_squeeze").Get()
+        command = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
+        squeeze = float(_command_args(command)["effective_squeeze"])
         # At 3.0m focus, squeeze is interpolated (not nominal 2.0)
         assert 1.9 < squeeze < 2.0
 
-    def test_shader_pupil_offset(self, stage, alexa35_camera, lens_state_50mm):
+    def test_pupil_offset_in_stage_units(self, stage, alexa35_camera, lens_state_50mm):
         UsdGeom.Camera.Define(stage, "/World/Camera")
-        shader = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
-        offset = shader.GetInput("entrance_pupil_offset_cm").Get()
+        command = bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
+        offset = float(_command_args(command)["entrance_pupil_offset"])
+        # 12.5cm at the default cm stage (metersPerUnit 0.01) = 12.5 units
         assert offset == pytest.approx(12.5, abs=0.01)
 
-    def test_camera_shader_binding_attr(self, stage, alexa35_camera, lens_state_50mm):
+    def test_pupil_offset_override(self, stage, alexa35_camera, lens_state_50mm):
         UsdGeom.Camera.Define(stage, "/World/Camera")
-        bind_lens_shader(stage, "/World/Camera", alexa35_camera, lens_state_50mm)
-        cam_prim = stage.GetPrimAtPath("/World/Camera")
-        shader_path = cam_prim.GetAttribute("karma:lens:shader").Get()
-        assert shader_path == "/World/Camera/CinemaLensShader"
+        command = bind_lens_shader(stage, "/World/Camera", alexa35_camera,
+                                   lens_state_50mm, entrance_pupil_offset_cm=10.0)
+        assert float(_command_args(command)["entrance_pupil_offset"]) == pytest.approx(10.0)
+
+
+class TestRenderSettings:
+    """Validate configure_render_settings (camera bound via RELATIONSHIP)."""
+
+    def test_camera_relationship(self, stage, alexa35_camera):
+        from cinema_camera.usd_builder import configure_render_settings
+        UsdGeom.Camera.Define(stage, "/World/Rig/FluidHead/Body/Sensor")
+        settings = configure_render_settings(
+            stage, "/World/Rig/FluidHead/Body/Sensor", alexa35_camera)
+        targets = settings.GetCameraRel().GetTargets()
+        assert [str(t) for t in targets] == ["/World/Rig/FluidHead/Body/Sensor"]
+        res = settings.GetResolutionAttr().Get()
+        assert res == Gf.Vec2i(4608, 3164)
+
+    def test_products_link(self, stage, alexa35_camera):
+        from cinema_camera.usd_builder import configure_render_settings
+        settings = configure_render_settings(stage, "/World/Cam/Sensor", alexa35_camera)
+        targets = [str(t) for t in settings.GetProductsRel().GetTargets()]
+        assert targets == ["/Render/Products/Sensor"]

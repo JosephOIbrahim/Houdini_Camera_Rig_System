@@ -151,6 +151,57 @@ CAMERA_PRESETS: dict[str, dict] = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────
+# Sensor-plane mount offsets (cm): y above the tripod plate, z behind
+# the operator handle. Single source of truth — consumed by
+# usd_builder.build_usd_camera_rig (and through it the LOP HDA).
+# Keyed by body_id; model-name and pre-v3.2 legacy keys kept as aliases.
+# ─────────────────────────────────────────────────────────────────
+MOUNT_OFFSETS_CM: dict[str, dict[str, float]] = {
+    # 2026 factory presets (body_id keys)
+    "alexa35":                     {"y": 5.0, "z": -8.0},
+    "alexa_mini_lf":               {"y": 4.5, "z": -7.0},
+    "alexa_65":                    {"y": 7.0, "z": -12.5},
+    "sony_venice_2":               {"y": 5.5, "z": -9.0},
+    "red_v_raptor_8k_vv":          {"y": 3.5, "z": -5.5},
+    "blackmagic_ursa_cine_12k_lf": {"y": 5.5, "z": -9.0},
+    # Model-name aliases (pure-pxr usd_builder path keys by CameraState.model)
+    "ARRI ALEXA 35":               {"y": 5.0, "z": -8.0},
+    "RED KOMODO":                  {"y": 3.5, "z": -5.0},
+    "SONY VENICE 2":               {"y": 5.5, "z": -9.0},
+    # Legacy ids (pre-v3.2 scenes)
+    "red_komodo":                  {"y": 3.5, "z": -5.0},
+    "sony_venice2":                {"y": 5.5, "z": -9.0},
+}
+
+DEFAULT_MOUNT_OFFSET_CM: dict[str, float] = {"y": 4.0, "z": -7.0}
+
+
+def mount_offset_for(*keys: str) -> dict[str, float]:
+    """First MOUNT_OFFSETS_CM hit among the given keys (body_id, model...),
+    else the default offset."""
+    for key in keys:
+        if key and key in MOUNT_OFFSETS_CM:
+            return MOUNT_OFFSETS_CM[key]
+    return DEFAULT_MOUNT_OFFSET_CM
+
+
+def body_weight_for(body_id: str) -> float | None:
+    """Operational body weight (kg) for a body_id, or None if unknown."""
+    for p in CAMERA_PRESETS.values():
+        if p["body_id"] == body_id:
+            return p["body_weight_kg"]
+    return None
+
+
+def model_for(body_id: str) -> str | None:
+    """Human-readable model string for a body_id, or None if unknown."""
+    for p in CAMERA_PRESETS.values():
+        if p["body_id"] == body_id:
+            return p["model"]
+    return None
+
+
 def get_preset(preset_key: str) -> dict:
     """Lookup preset by key; raises KeyError if unknown."""
     if preset_key not in CAMERA_PRESETS:

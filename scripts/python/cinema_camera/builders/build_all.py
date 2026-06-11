@@ -11,17 +11,19 @@ Or paste-and-run:
     exec(open(r"C:\\Users\\User\\Houdini_Camera_Rig_System\\scripts\\python\\cinema_camera\\builders\\build_all.py").read())
     build_all_v3()
 
-Build order (legacy satellites first, Copernicus 2.0 preview satellites next,
-orchestrators last; only the LEGACY satellites are consumed by the orchestrator):
-    1. cinema::chops_biomechanics::3.0
-    2. cinema::cop_anamorphic_flare::3.0    (cop2, consumed by orchestrator)
-    3. cinema::cop_sensor_noise::3.0        (cop2, consumed by orchestrator)
-    4. cinema::cop_stmap_aov::3.0           (cop2, consumed by orchestrator)
-    5. cinema::flare::3.0                   (Copernicus 2.0 preview, INDEPENDENT)
-    6. cinema::sensor_noise::3.0            (Copernicus 2.0 preview, INDEPENDENT)
-    7. cinema::stmap_aov::3.0               (Copernicus 2.0 preview, INDEPENDENT)
-    8. cinema::camera_rig_lop::3.0
-    9. cinema::camera_rig::3.0              (orchestrator -- references 1-4)
+Build order (lens shader VOP + legacy satellites first, Copernicus 2.0
+preview satellites next, orchestrators last; only the LEGACY satellites are
+consumed by the orchestrator):
+    1. cinema_lens_shader (VOP)             (vcc-compiled Karma lens shader)
+    2. cinema::chops_biomechanics::3.0
+    3. cinema::cop_anamorphic_flare::3.0    (cop2, consumed by orchestrator)
+    4. cinema::cop_sensor_noise::3.0        (cop2, consumed by orchestrator)
+    5. cinema::cop_stmap_aov::3.0           (cop2, consumed by orchestrator)
+    6. cinema::flare::3.0                   (Copernicus 2.0 preview, INDEPENDENT)
+    7. cinema::sensor_noise::3.0            (Copernicus 2.0 preview, INDEPENDENT)
+    8. cinema::stmap_aov::3.0               (Copernicus 2.0 preview, INDEPENDENT)
+    9. cinema::camera_rig_lop::3.0          (binds the lens shader from 1)
+   10. cinema::camera_rig::3.0              (orchestrator -- references 2-5)
 
 All HDAs save to $CINEMA_CAMERA_REPO/otls/ and auto-install in the live session.
 """
@@ -35,7 +37,7 @@ import traceback
 
 def build_all_v3(force_reimport: bool = True) -> dict:
     """
-    Build all 6 v3.0 HDAs in dependency order, install each in the running session.
+    Build all 10 v3.0 HDAs in dependency order, install each in the running session.
 
     Returns a dict: {op_name: hda_path | error_string}.
     Raises RuntimeError if CINEMA_CAMERA_REPO env is missing.
@@ -63,6 +65,7 @@ def build_all_v3(force_reimport: bool = True) -> dict:
                 del sys.modules[mod]
 
     import hou
+    from cinema_camera.builders.build_lens_shader_vop         import build_lens_shader_vop_hda
     from cinema_camera.builders.build_chops_biomechanics      import build_chops_biomechanics_hda
     from cinema_camera.builders.build_cop_anamorphic_flare    import build_cop_anamorphic_flare_hda
     from cinema_camera.builders.build_cop_sensor_noise        import build_cop_sensor_noise_hda
@@ -74,6 +77,8 @@ def build_all_v3(force_reimport: bool = True) -> dict:
     from cinema_camera.builders.build_camera_rig_orchestrator import build_camera_rig_orchestrator_hda
 
     plan = [
+        # Karma lens shader VOP (vcc-compiled; bound by the LOP rig)
+        ("cinema_lens_shader (VOP)",            build_lens_shader_vop_hda),
         # Legacy cop2 satellites -- full-featured, consumed by the orchestrator
         ("cinema::chops_biomechanics::3.0",     build_chops_biomechanics_hda),
         ("cinema::cop_anamorphic_flare::3.0",   build_cop_anamorphic_flare_hda),

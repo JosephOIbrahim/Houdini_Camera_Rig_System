@@ -11,26 +11,11 @@ from __future__ import annotations
 
 import os
 
+from .parm_templates import _callback_shim
 
-# Auto-derive callback script embedded in the HDA
-_AUTO_DERIVE_CALLBACK = '''
-node = kwargs["node"]
-if node.parm("auto_derive").eval():
-    weight = node.parm("combined_weight_kg").eval()
-
-    # Mirrors biomechanics.py derivation (weight-driven, not inertia-driven)
-    spring_k = max(5.0, 25.0 - weight * 1.3)
-    damping = min(0.95, 0.6 + weight * 0.025)
-    lag = weight * 0.3
-    shake_amp = max(0.05, 1.5 / weight)
-    shake_freq = max(2.0, 8.0 - weight * 0.3)
-
-    node.parm("spring_constant").set(spring_k)
-    node.parm("damping_ratio").set(damping)
-    node.parm("lag_frames").set(lag)
-    node.parm("shake_amplitude_deg").set(shake_amp)
-    node.parm("shake_frequency_hz").set(shake_freq)
-'''
+# Auto-derive callback: shim over cinema_camera.hda_callbacks (formulas
+# live in biomechanics.auto_derive_from_weight -- single source).
+_AUTO_DERIVE_CALLBACK = _callback_shim("auto_derive_chops")
 
 
 def build_chops_biomechanics_hda(
@@ -60,57 +45,60 @@ def build_chops_biomechanics_hda(
     # Build inside a subnet (subnet can be converted to HDA)
     sub = temp_net.createNode("subnet", "__biomech_sub")
 
-    # Raw camera input (user wires Pan/Tilt/Roll here)
-    raw_input = sub.createNode("fetch", "raw_camera_input")
+    # The HDA's input connector, visible inside the subnet. (The previous
+    # build used an unconfigured Fetch CHOP here, so the HDA silently
+    # ignored whatever was wired into it.)
+    subnet_input = sub.indirectInputs()[0]
 
-    # Solver parameters (constant node holding derived values)
-    solver_params = sub.createNode("constant", "solver_params")
-    solver_params.parm("name0").set("spring_k")
-    solver_params.parm("value0").setExpression('ch("../../spring_constant")')
-    solver_params.parm("name1").set("damping")
-    solver_params.parm("value1").setExpression('ch("../../damping_ratio")')
-    solver_params.parm("name2").set("lag_frames")
-    solver_params.parm("value2").setExpression('ch("../../lag_frames")')
-    solver_params.parm("name3").set("shake_amp")
-    solver_params.parm("value3").setExpression('ch("../../shake_amplitude_deg")')
-    solver_params.parm("name4").set("shake_freq")
-    solver_params.parm("value4").setExpression('ch("../../shake_frequency_hz")')
+    # Operator delay FIRST (the solver springs toward the lagged target --
+    # same order as the LOP solver in cinema_camera.biomechanics).
+    # Lag CHOP works in SECONDS; the parm is in frames.
+    operator_delay = sub.createNode("lag", "operator_delay")
+    operator_delay.parm("lag1").setExpression('ch("../../lag_frames") / $FPS')
+    if operator_delay.parm("lag2") is not None:
+        operator_delay.parm("lag2").setExpression('ch("../../lag_frames") / $FPS')
+    operator_delay.setInput(0, subnet_input)
 
-    # Spring solver -- applies inertia dynamics
+    # Spring solver -- applies inertia dynamics.
+    # Spring CHOP's dampingk is a damping CONSTANT, not a ratio:
+    # critical damping at c = 2*sqrt(k*m). With mass=1, c = 2*sqrt(k)*zeta.
     inertia_solver = sub.createNode("spring", "inertia_solver")
     inertia_solver.parm("springk").setExpression('ch("../../spring_constant")')
-    inertia_solver.parm("dampingk").setExpression('ch("../../damping_ratio")')
-    inertia_solver.setInput(0, raw_input)
+    inertia_solver.parm("mass").set(1.0)
+    inertia_solver.parm("dampingk").setExpression(
+        '2 * sqrt(ch("../../spring_constant")) * ch("../../damping_ratio")'
+    )
+    inertia_solver.setInput(0, operator_delay)
 
-    # Operator delay
-    operator_delay = sub.createNode("lag", "operator_delay")
-    operator_delay.parm("lag1").setExpression('ch("../../lag_frames")')
-    operator_delay.setInput(0, inertia_solver)
-
-    # Handheld shake (sparse noise)
+    # Handheld shake (per-channel noise; Math CHOP combines by index)
     handheld_shake = sub.createNode("noise", "handheld_shake")
+    handheld_shake.parm("channelname").set("shake1 shake2 shake3")
+    handheld_shake.parm("seed").set(7)
     handheld_shake.parm("amp").setExpression('ch("../../shake_amplitude_deg")')
     # Period = 1/frequency (seconds per cycle)
     handheld_shake.parm("period").setExpression('1.0 / ch("../../shake_frequency_hz")')
     handheld_shake.parm("function").set(4)  # Sparse noise
 
-    # Combine: spring+lag output + optional shake
+    # Combine: lag+spring output + optional shake (match by index -- the
+    # shake channels are named shake*, the motion channels keep the
+    # caller's names)
     combine_motion = sub.createNode("math", "combine_motion")
     combine_motion.parm("chopop").set(1)  # Add
-    combine_motion.setInput(0, operator_delay)
+    if combine_motion.parm("match") is not None:
+        combine_motion.parm("match").set("index")
+    combine_motion.setInput(0, inertia_solver)
     combine_motion.setInput(1, handheld_shake)
 
     # Switch for handheld enable/disable
     handheld_enable = sub.createNode("switch", "handheld_enable")
     handheld_enable.parm("index").setExpression('ch("../../enable_handheld")')
-    handheld_enable.setInput(0, operator_delay)   # Off: spring+lag only
-    handheld_enable.setInput(1, combine_motion)   # On: spring+lag+shake
+    handheld_enable.setInput(0, inertia_solver)   # Off: lag+spring only
+    handheld_enable.setInput(1, combine_motion)   # On: lag+spring+shake
 
-    # Output
+    # Output (pull-based consumers use chop() on this node's channels)
     out = sub.createNode("null", "OUT_biomechanics")
     out.setInput(0, handheld_enable)
     out.setDisplayFlag(True)
-    out.setExportFlag(True)
 
     # Layout
     sub.layoutChildren()

@@ -1,56 +1,84 @@
 // ═══════════════════════════════════════════════════════════
-// KARMA CVEX LENS SHADER — Cinema Camera Rig v4.0
+// KARMA CVEX LENS SHADER — Cinema Camera Rig
 //
-// Warps render rays BEFORE scene sampling.
-// This preserves DOF, motion blur, and refraction fidelity.
+// Contract: Houdini 21 "Creating a lens shader for Karma"
+// (solaris/support/karma_lens_shader). Projection math mirrors the docs'
+// "Standard projection" example so a zeroed shader matches Karma's
+// built-in perspective camera exactly.
 //
-// Compiles to: cvex_cinema_lens.vex
-// Usage: Assign as lens shader on Karma render settings
+// Build:   vcc -O vop -l otls/cinema_lens_shader.hda \
+//              -I vex/include vex/include/karma_cinema_lens.vfl
+//          (builders/build_lens_shader_vop.py does this)
+// Binding: camera prim attrs, authored by cinema_camera.karma_lens_shader:
+//            karma:camera:use_lensshader = true
+//            karma:camera:lensshader     = "opdef:/Vop/cinema_lens_shader?CVexVflCode <args>"
 //
-// Parameters read from USD camera prim attributes at render time.
+// Conventions:
+//   - RHS camera space, rays look down -Z (negated when isRHS == 0).
+//   - entrance_pupil_offset is in SCENE UNITS, positive toward the scene;
+//     the binding code converts from mm using stage metersPerUnit.
+//     (Sign source: cinema_camera.protocols.ENTRANCE_PUPIL_Z_SIGN.)
+//   - Verified on Karma CPU; XPU lens-shader support unverified.
 // ═══════════════════════════════════════════════════════════
+
+#pragma opname  cinema_lens_shader
+#pragma oplabel "Cinema Lens Shader"
+
+#pragma label   effective_squeeze      "Effective Squeeze"
+#pragma range   effective_squeeze      1.0 2.0
+#pragma label   dist_sq_uniformity     "Squeeze Uniformity"
+#pragma range   dist_sq_uniformity     0.8 1.0
+#pragma label   entrance_pupil_offset  "Entrance Pupil Offset (scene units)"
+#pragma label   dist_k1                "K1 (Radial)"
+#pragma label   dist_k2                "K2 (Radial)"
+#pragma label   dist_k3                "K3 (Radial)"
+#pragma label   dist_p1                "P1 (Tangential)"
+#pragma label   dist_p2                "P2 (Tangential)"
+#pragma label   enable_distortion      "Enable Distortion"
+#pragma hint    enable_distortion      toggle
+#pragma label   enable_squeeze         "Enable Anamorphic Squeeze"
+#pragma hint    enable_squeeze         toggle
+#pragma label   enable_pupil_offset    "Enable Pupil Offset"
+#pragma hint    enable_pupil_offset    toggle
 
 #include <libcinema_optics.h>
 
-cvex cinema_lens_shader(
-    // ── Lens parameters (driven from USD attributes) ────
-    float focal_length_mm = 50.0;
-    float effective_squeeze = 2.0;         // cinema:rig:effectiveSqueeze
-    float entrance_pupil_offset_cm = 12.5; // cinema:rig:entrancePupilOffsetCm
-    float sensor_width_mm = 27.99;         // horizontalAperture
-    float sensor_height_mm = 19.22;        // verticalAperture
+cvex
+cinema_lens_shader(
+        // ── Karma-provided inputs (jittered NDC + DOF sampling) ──
+        float x = 0;
+        float y = 0;
+        float Time = 0;
+        float dofx = 0;
+        float dofy = 0;
+        float aspect = 1;
+        float focus = 1;
+        float focal = 1;
+        float fstop = 0;
+        float aperture = 1;
+        int   isRHS = 0;
 
-    // Distortion coefficients (from cinema:lens:distortion:*)
-    float dist_k1 = 0.0;
-    float dist_k2 = 0.0;
-    float dist_k3 = 0.0;
-    float dist_p1 = 0.0;
-    float dist_p2 = 0.0;
-    float dist_sq_uniformity = 1.0;
+        // ── Outputs ──────────────────────────────────────────────
+        export vector P = {0, 0, 0};
+        export vector I = {0, 0, 0};
+        export int valid = 1;
 
-    // Enable/disable controls
-    int enable_distortion = 1;
-    int enable_squeeze = 1;
-    int enable_pupil_offset = 1;
-
-    // ── Standard CVEX lens inputs ───────────────────────
-    float x = 0.0;     // Screen-space X (-1 to 1)
-    float y = 0.0;     // Screen-space Y (-1 to 1)
-    float Time = 0.0;
-    float sx = 0.0;    // Sub-pixel jitter X
-    float sy = 0.0;    // Sub-pixel jitter Y
-
-    // ── Standard CVEX lens outputs ──────────────────────
-    export vector P = {0, 0, 0};    // Ray origin (camera space)
-    export vector I = {0, 0, 1};    // Ray direction (camera space)
-    export int valid = 1;           // 1 = valid ray, 0 = discard
-) {
-    // ── Apply sub-pixel jitter ──────────────────────────
-    float jx = x + sx;
-    float jy = y + sy;
-
-    // ── Apply optical distortion to screen coordinates ──
-    vector2 uv = set(jx, jy);
+        // ── Cinema shader arguments (from the opdef binding) ─────
+        float effective_squeeze = 1.0;
+        float dist_sq_uniformity = 1.0;
+        float entrance_pupil_offset = 0.0;
+        float dist_k1 = 0.0;
+        float dist_k2 = 0.0;
+        float dist_k3 = 0.0;
+        float dist_p1 = 0.0;
+        float dist_p2 = 0.0;
+        int   enable_distortion = 1;
+        int   enable_squeeze = 1;
+        int   enable_pupil_offset = 1;
+)
+{
+    // ── Optical distortion + anamorphic squeeze in NDC ──────────
+    vector2 uv = set(x, y);
 
     if (enable_distortion) {
         CO_DistortionCoeffs coeffs;
@@ -62,36 +90,37 @@ cvex cinema_lens_shader(
         coeffs.squeeze_uniformity = dist_sq_uniformity;
 
         if (enable_squeeze && effective_squeeze > 1.01) {
-            // Dynamic anamorphic distortion with focus-dependent squeeze
+            // Anamorphic: Brown-Conrady + focus-dependent squeeze (mumps)
             uv = co_apply_anamorphic_distortion(uv, coeffs, effective_squeeze);
         } else {
-            // Standard spherical distortion
+            // Spherical Brown-Conrady
             uv = co_apply_distortion(uv, coeffs);
         }
     } else if (enable_squeeze && effective_squeeze > 1.01) {
-        // Squeeze only, no distortion
+        // Squeeze only: the anamorphic front group widens horizontal FOV
         uv.x *= effective_squeeze;
     }
 
-    // ── Convert screen UV to camera-space ray direction ─
-    // Map [-1,1] screen coords to sensor plane coordinates
-    float half_w = sensor_width_mm * 0.5;
-    float half_h = sensor_height_mm * 0.5;
+    // ── Standard projection (matches Karma's perspective camera) ─
+    I = set(uv.x * aperture * 0.5 * aspect / focal,
+            uv.y * aperture * 0.5 / focal,
+            -1.0);              // RHS: look down -Z
 
-    float ray_x = uv.x * half_w;
-    float ray_y = uv.y * half_h;
-    float ray_z = focal_length_mm;
-
-    I = normalize(set(ray_x, ray_y, ray_z));
-
-    // ── Ray origin at entrance pupil ────────────────────
-    // Physical rays originate at the nodal point, not sensor plane
+    // ── Thin-lens origin: aperture-disk sample at the pupil ─────
+    P = set(dofx, dofy, 0.0);
     if (enable_pupil_offset) {
-        // Entrance pupil is FORWARD from sensor (positive Z in camera space)
-        // Convert cm to Houdini scene units (cm default in USD)
-        P = set(0, 0, entrance_pupil_offset_cm);
-    } else {
-        P = set(0, 0, 0);
+        // Pupil sits toward the scene: negative Z in RHS camera space.
+        P.z = -entrance_pupil_offset;
+    }
+
+    // Focus: every ray re-converges on the focus plane, so framing at
+    // the focus plane is invariant and off-plane parallax is physical.
+    I *= focus;
+    I -= P;
+
+    if (!isRHS) {
+        P.z = -P.z;
+        I.z = -I.z;
     }
 
     valid = 1;

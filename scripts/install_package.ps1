@@ -8,6 +8,11 @@
     folders so Houdini auto-loads the repo at startup, prepending the repo's
     otls/, vex/, and scripts/python/ to HOUDINI_PATH.
 
+    Before installing, the CINEMA_CAMERA_REPO value inside the package json
+    is pinned to THIS clone's absolute path (rewritten in place if it
+    differs), so the repo works from any clone location while keeping
+    symlink hot-reload semantics.
+
     Targets (auto-detected):
       $env:USERPROFILE\houdini21.0\packages\
       $env:USERPROFILE\OneDrive\Documents\houdini21.0\packages\
@@ -45,6 +50,22 @@ $RepoRoot      = Split-Path -Parent $PSScriptRoot
 $PackagesDir   = Join-Path $RepoRoot 'packages'
 $MainPackage   = Join-Path $PackagesDir 'cinema_camera_rig.json'
 $LocalPackage  = Join-Path $PackagesDir 'cinema_camera_rig.local.json'
+
+function Sync-RepoPathInPackage {
+    # The tracked package json pins CINEMA_CAMERA_REPO to an absolute path.
+    # Rewrite it to THIS clone's root if it differs (surgical regex keeps
+    # the file's formatting and comment keys intact).
+    $content = Get-Content $MainPackage -Raw
+    $repoFwd = $RepoRoot -replace '\\', '/'
+    $pattern = '("CINEMA_CAMERA_REPO":\s*")[^"]*(")'
+    $updated = $content -replace $pattern, "`${1}$repoFwd`${2}"
+    if ($updated -ne $content) {
+        Set-Content -Path $MainPackage -Value $updated -Encoding utf8 -NoNewline
+        Write-Host "  [pin]  CINEMA_CAMERA_REPO -> $repoFwd" -ForegroundColor Green
+    } else {
+        Write-Host "  [pin]  CINEMA_CAMERA_REPO already points at this clone" -ForegroundColor DarkGray
+    }
+}
 
 function Get-DefaultTargets {
     $candidates = @(
@@ -125,6 +146,8 @@ Write-Host ""
 Write-Host "Cinema Camera Rig override package installer" -ForegroundColor Cyan
 Write-Host "  Repo:     $RepoRoot"
 Write-Host ""
+
+if (-not $Uninstall) { Sync-RepoPathInPackage }
 
 if (-not $Targets) { $Targets = Get-DefaultTargets }
 

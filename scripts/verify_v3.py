@@ -135,13 +135,18 @@ if instance:
     else:
         _bad("show_nodal_guide toggle parm missing")
 
-    # v3.3 artist-friendly parms
+    # v3.3 artist-friendly parms + v3.4 fluid-head targets / lens apply
     for parm_name, descr in (
         ("camera_preset",            "Preset tab camera dropdown"),
         ("focal_length_preset",      "Lens common-prime menu"),
         ("shutter_angle_deg",        "Lens shutter angle"),
         ("show_advanced_distortion", "Distortion advanced toggle"),
         ("handheld_style",           "Biomech handheld style menu"),
+        ("apply_lens",               "Lens tab Apply Lens button"),
+        ("lens_status",              "Lens tab status label"),
+        ("target_pan_deg",           "Biomech keyframable pan target"),
+        ("target_tilt_deg",          "Biomech keyframable tilt target"),
+        ("target_roll_deg",          "Biomech keyframable roll target"),
     ):
         if instance.parm(parm_name) is not None:
             _ok(f"artist parm {parm_name} present ({descr})")
@@ -192,7 +197,6 @@ else:
                 "/CinemaRig/FluidHead/Body",
                 "/CinemaRig/FluidHead/Body/Sensor",
                 "/CinemaRig/FluidHead/Body/Sensor/EntrancePupil",
-                "/CinemaRig/FluidHead/Body/Sensor/CinemaLensShader",
                 "/Render/Products/Sensor",
                 "/Render/CinemaRigSettings",
             ]
@@ -202,6 +206,43 @@ else:
                     _ok(f"prim {p}")
                 else:
                     _bad(f"prim missing: {p}")
+
+            # Karma lens shader binding: the attrs Karma actually consumes
+            sensor = usd.GetPrimAtPath("/CinemaRig/FluidHead/Body/Sensor")
+            if sensor and sensor.IsValid():
+                use_attr = sensor.GetAttribute("karma:camera:use_lensshader")
+                cmd_attr = sensor.GetAttribute("karma:camera:lensshader")
+                if use_attr and use_attr.Get() is True:
+                    _ok("karma:camera:use_lensshader = True")
+                else:
+                    _bad("karma:camera:use_lensshader missing/False")
+                cmd = (cmd_attr.Get() or "") if cmd_attr else ""
+                if cmd.startswith("opdef:/Vop/cinema_lens_shader?") and "dist_k1" in cmd:
+                    _ok(f"karma:camera:lensshader opdef bound ({cmd[:60]}...)")
+                else:
+                    _bad(f"karma:camera:lensshader malformed: '{cmd[:80]}'")
+
+                # Entrance pupil sign: toward the scene = negative Z
+                from pxr import UsdGeom as _UsdGeom
+                pupil = usd.GetPrimAtPath(
+                    "/CinemaRig/FluidHead/Body/Sensor/EntrancePupil")
+                ops = _UsdGeom.Xformable(pupil).GetOrderedXformOps()
+                tz = ops[0].Get()[2] if ops else None
+                if tz is not None and tz < 0:
+                    _ok(f"EntrancePupil z = {tz:.2f}cm (negative: toward scene)")
+                else:
+                    _bad(f"EntrancePupil z = {tz} (expected negative)")
+
+            # RenderSettings camera bound via RELATIONSHIP (not string attr)
+            from pxr import UsdRender as _UsdRender
+            settings_prim = usd.GetPrimAtPath("/Render/CinemaRigSettings")
+            if settings_prim and settings_prim.IsValid():
+                rel_targets = [str(t) for t in
+                               _UsdRender.Settings(settings_prim).GetCameraRel().GetTargets()]
+                if rel_targets == ["/CinemaRig/FluidHead/Body/Sensor"]:
+                    _ok("RenderSettings camera REL -> Sensor")
+                else:
+                    _bad(f"RenderSettings camera rel targets: {rel_targets}")
     except Exception as e:
         _bad(f"LOP cook exception: {e}")
         traceback.print_exc()
@@ -392,6 +433,203 @@ else:
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# [8] Wiring / units / parity audit (v3.4)
+#     a) ch() expression survival on orchestrator sub-HDA instances
+#     b) OBJ object-level parenting chain (the rig actually rigs)
+#     c) entrance pupil units (/obj meters)
+#     d) lens registry resolve + apply fills parms
+#     e) OBJ-vs-LOP biomechanics step-response parity
+# ──────────────────────────────────────────────────────────────────────────
+print("\n[8] wiring / units / parity audit")
+
+# -- [8a] expression survival ----------------------------------------------
+try:
+    inst = hou.node("/obj/__verify_v3_obj")
+    if inst is None:
+        _bad("[8a] orchestrator instance missing (section [2] failed?)")
+    else:
+        expr_expectations = [
+            ("post_pipeline/anamorphic_flare", "threshold",   "flare_threshold"),
+            ("post_pipeline/sensor_noise",     "native_iso",  "native_iso"),
+            ("post_pipeline/stmap_aov",        "dist_k1",     "dist_k1"),
+            ("biomechanics/biomech_solver",    "combined_weight_kg", "combined_weight_kg"),
+            ("cinema_camera",                  "focal",       "focal_length_mm"),
+            ("cinema_camera",                  "fstop",       "t_stop"),
+        ]
+        for node_path, parm_name, expected_ref in expr_expectations:
+            n = inst.node(node_path)
+            p = n.parm(parm_name) if n else None
+            if p is None:
+                _bad(f"[8a] {node_path}.{parm_name} missing")
+                continue
+            try:
+                expr = p.expression()
+            except hou.OperationFailed:
+                expr = ""
+            if expected_ref in expr:
+                _ok(f"[8a] {node_path}.{parm_name} expr carries {expected_ref}")
+            else:
+                _bad(f"[8a] {node_path}.{parm_name} expr lost: '{expr}'")
+except Exception as e:
+    _bad(f"[8a] expression audit failed: {e}")
+    traceback.print_exc()
+
+# -- [8b] parenting chain + [8c] pupil units -------------------------------
+try:
+    inst = hou.node("/obj/__verify_v3_obj")
+    if inst:
+        cam_n = inst.node("cinema_camera")
+        pivot_n = inst.node("entrance_pupil_pivot")
+        head_n = inst.node("fluid_head_mount")
+        if cam_n and pivot_n and head_n:
+            cam_in = cam_n.inputs()[0] if cam_n.inputs() else None
+            pivot_in = pivot_n.inputs()[0] if pivot_n.inputs() else None
+            if cam_in == pivot_n and pivot_in == head_n:
+                _ok("[8b] parenting: fluid_head -> pupil_pivot -> cam")
+            else:
+                _bad(f"[8b] parenting broken: cam<-{cam_in}, pivot<-{pivot_in}")
+            tz = cam_n.evalParm("tz")
+            if abs(tz - 0.125) < 1e-4:
+                _ok(f"[8c] cam tz = {tz:.4f} m for 125mm pupil offset (/1000)")
+            else:
+                _bad(f"[8c] cam tz = {tz} (expected 0.125 m at default 125mm)")
+        else:
+            _bad("[8b] rig nodes missing inside orchestrator instance")
+except Exception as e:
+    _bad(f"[8b/8c] parenting/unit audit failed: {e}")
+    traceback.print_exc()
+
+# -- [8d] lens registry resolve + apply ------------------------------------
+try:
+    from cinema_camera.registry import resolve_lens
+    from cinema_camera import hda_callbacks
+
+    spec75 = resolve_lens("cooke_ana_i_s35_75mm")
+    if abs(spec75.focal_length_mm - 75.0) < 0.01:
+        _ok(f"[8d] resolve_lens: 75mm spec (T{spec75.t_stop_min}, "
+            f"pupil={spec75.entrance_pupil_offset_mm}mm)")
+    else:
+        _bad(f"[8d] resolve_lens returned focal {spec75.focal_length_mm}")
+
+    lop_inst = hou.node("/stage/__verify_v3_lop")
+    if lop_inst is None:
+        _bad("[8d] LOP instance missing for apply_lens check")
+    else:
+        lop_inst.parm("lens_id").set("cooke_ana_i_s35_75mm")
+        hda_callbacks.apply_lens(lop_inst)
+        checks = [
+            ("focal_length_mm", spec75.focal_length_mm),
+            ("dist_k1", spec75.distortion.k1),
+            ("entrance_pupil_offset_mm", spec75.entrance_pupil_offset_mm),
+        ]
+        for parm_name, want in checks:
+            got = lop_inst.evalParm(parm_name)
+            if abs(got - want) < 1e-4:
+                _ok(f"[8d] apply_lens set {parm_name} = {got:g}")
+            else:
+                _bad(f"[8d] apply_lens {parm_name} = {got} (want {want})")
+        # cook-time effective squeeze follows the 75mm curve, not the parm
+        lop_inst.cook(force=True)
+        usd75 = lop_inst.stage()
+        sq_attr = usd75.GetPrimAtPath("/CinemaRig/FluidHead/Body/Sensor") \
+                       .GetAttribute("cinema:rig:effectiveSqueeze")
+        sq = sq_attr.Get() if sq_attr else None
+        want_sq = spec75.effective_squeeze(lop_inst.evalParm("focus_distance_m"))
+        if sq is not None and abs(sq - want_sq) < 1e-3:
+            _ok(f"[8d] cook-time effective squeeze = {sq:.4f} (lens curve)")
+        else:
+            _bad(f"[8d] effective squeeze {sq} != curve value {want_sq}")
+except Exception as e:
+    _bad(f"[8d] lens resolve/apply audit failed: {e}")
+    traceback.print_exc()
+
+# -- [8e] OBJ-vs-LOP biomechanics step-response parity ----------------------
+try:
+    STEP_DEG = 30.0
+    F_START, F_STEP, F_END = 1, 5, 48
+
+    # OBJ side: keyframe target_pan_deg as a step, sample fluid head ry.
+    inst = hou.node("/obj/__verify_v3_obj")
+    obj_val = None
+    if inst and inst.parm("target_pan_deg") is not None:
+        pan = inst.parm("target_pan_deg")
+        pan.deleteAllKeyframes()
+        for f, v in ((F_START, 0.0), (F_STEP - 1, 0.0), (F_STEP, STEP_DEG), (F_END, STEP_DEG)):
+            k = hou.Keyframe()
+            k.setFrame(f)
+            k.setValue(v)
+            k.setExpression("linear()", hou.exprLanguage.Hscript)
+            pan.setKeyframe(k)
+        head_n = inst.node("fluid_head_mount")
+        if head_n is not None:
+            obj_val = head_n.parm("ry").evalAtFrame(F_END)
+            early = head_n.parm("ry").evalAtFrame(F_START)
+            if abs(early) < 2.0 and abs(obj_val - STEP_DEG) < 0.25 * STEP_DEG:
+                _ok(f"[8e] OBJ chop chain follows step: ry(f{F_END}) = {obj_val:.2f} "
+                    f"(target {STEP_DEG})")
+            else:
+                _bad(f"[8e] OBJ chop response off: ry(f{F_START})={early:.2f}, "
+                     f"ry(f{F_END})={obj_val}")
+        pan.deleteAllKeyframes()
+    else:
+        _bad("[8e] target_pan_deg parm missing on orchestrator")
+
+    # LOP side: author a step rotateXYZ input prim upstream, filter it.
+    stage_net = hou.node("/stage")
+    probe = stage_net.node("__verify_v3_biomech_src")
+    if probe:
+        probe.destroy()
+    probe = stage_net.createNode("pythonscript", "__verify_v3_biomech_src")
+    probe.parm("python").set(
+        "from pxr import Gf, Usd, UsdGeom\n"
+        "stage = hou.pwd().editableStage()\n"
+        "xf = UsdGeom.Xform.Define(stage, '/BiomechProbe')\n"
+        "op = xf.AddRotateXYZOp()\n"
+        "for f in range(%d, %d + 1):\n"
+        "    v = %g if f >= %d else 0.0\n"
+        "    op.Set(Gf.Vec3f(0.0, v, 0.0), Usd.TimeCode(f))\n"
+        % (F_START, F_END, STEP_DEG, F_STEP)
+    )
+    rig = stage_net.node("__verify_v3_biomech")
+    lop_val = None
+    if rig is not None:
+        rig.setInput(0, probe)
+        rig.parm("input_camera_path").set("/BiomechProbe")
+        rig.parm("enable_biomechanics").set(True)
+        rig.parm("enable_handheld").set(False)
+        rig.parm("auto_derive").set(True)
+        rig.cook(force=True)
+        from pxr import Usd as _Usd, UsdGeom as _UsdGeom2
+        usd_b = rig.stage()
+        head = usd_b.GetPrimAtPath("/CinemaRig/FluidHead")
+        rot_op = None
+        for op in _UsdGeom2.Xformable(head).GetOrderedXformOps():
+            if op.GetOpName() == "xformOp:rotateXYZ":
+                rot_op = op
+                break
+        if rot_op is not None:
+            v_end = rot_op.Get(_Usd.TimeCode(F_END))
+            lop_val = float(v_end[1]) if v_end is not None else None
+        if lop_val is not None and abs(lop_val - STEP_DEG) < 0.25 * STEP_DEG:
+            _ok(f"[8e] LOP solver follows step: ry(f{F_END}) = {lop_val:.2f}")
+        else:
+            _bad(f"[8e] LOP solver response off: ry(f{F_END}) = {lop_val}")
+    else:
+        _bad("[8e] /stage/__verify_v3_biomech missing for parity check")
+
+    # Parity: same step, same auto-derive weight -> comparable settling.
+    if obj_val is not None and lop_val is not None:
+        if abs(obj_val - lop_val) <= 0.15 * STEP_DEG:
+            _ok(f"[8e] OBJ/LOP parity: |{obj_val:.2f} - {lop_val:.2f}| "
+                f"<= {0.15 * STEP_DEG:.1f}deg")
+        else:
+            _bad(f"[8e] OBJ/LOP diverge: obj={obj_val:.2f} lop={lop_val:.2f}")
+except Exception as e:
+    _bad(f"[8e] step-response parity failed: {e}")
+    traceback.print_exc()
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Summary
 # ──────────────────────────────────────────────────────────────────────────
 print()
@@ -406,5 +644,6 @@ print("Test nodes left for inspection (destroy when done):")
 print("  /obj/__verify_v3_obj")
 print("  /stage/__verify_v3_lop")
 print("  /stage/__verify_v3_biomech")
+print("  /stage/__verify_v3_biomech_src  (step-input probe for [8e])")
 print("  /obj/__verify_v3_cop  (Copernicus 2.0 smoke test geo)")
 print("=" * 64)

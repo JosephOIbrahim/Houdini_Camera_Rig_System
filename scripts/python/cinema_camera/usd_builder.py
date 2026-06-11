@@ -10,23 +10,23 @@ No Houdini GUI required -- uses pxr module only.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdRender
 
-from .protocols import CameraState, LensState, OpticalResult
+from .protocols import ENTRANCE_PUPIL_Z_SIGN, CameraState, LensState, OpticalResult
+from .presets import DEFAULT_MOUNT_OFFSET_CM, MOUNT_OFFSETS_CM, mount_offset_for
 
 
 # ════════════════════════════════════════════════════════════
-# BODY OFFSET CONSTANTS (mm -> cm)
+# BODY OFFSET CONSTANTS
 # ════════════════════════════════════════════════════════════
+# Canonical data lives in presets.MOUNT_OFFSETS_CM (keyed by body_id, with
+# model-name and legacy aliases). These module aliases are kept for
+# back-compat with existing imports/tests.
 
-_BODY_OFFSETS_CM: dict[str, dict[str, float]] = {
-    "ARRI ALEXA 35":  {"y": 5.0, "z": -8.0},
-    "RED KOMODO":     {"y": 3.5, "z": -5.0},
-    "SONY VENICE 2":  {"y": 5.5, "z": -9.0},
-}
-_DEFAULT_BODY_OFFSET: dict[str, float] = {"y": 4.0, "z": -7.0}
+_BODY_OFFSETS_CM = MOUNT_OFFSETS_CM
+_DEFAULT_BODY_OFFSET = DEFAULT_MOUNT_OFFSET_CM
 
 
 # ════════════════════════════════════════════════════════════
@@ -64,6 +64,9 @@ def build_usd_camera_rig(
     lens_state: LensState,
     optical_result: OpticalResult,
     fluid_head_model: str = "OConnor 2575",
+    body_id: str = "",
+    entrance_pupil_offset_cm: Optional[float] = None,
+    combined_weight_kg: Optional[float] = None,
 ) -> UsdGeom.Camera:
     """
     Build a nodal-parallax-correct camera rig in USD.
@@ -75,20 +78,35 @@ def build_usd_camera_rig(
               /Sensor                      UsdGeom.Camera
                 /EntrancePupil             NODAL POINT (guide)
 
+    Optional rig-level overrides (used by the LOP HDA, where the artist's
+    parm values win over lens-spec defaults):
+      body_id                  -- preferred mount-offset key (model is fallback)
+      entrance_pupil_offset_cm -- overrides lens_state.entrance_pupil_offset_cm
+      combined_weight_kg       -- body+lens weight; default is lens weight only
+
     Returns the UsdGeom.Camera at the Sensor prim.
     """
+    pupil_cm = (entrance_pupil_offset_cm if entrance_pupil_offset_cm is not None
+                else lens_state.entrance_pupil_offset_cm)
+    weight_kg = (combined_weight_kg if combined_weight_kg is not None
+                 else lens_state.rig_weight_kg)
+
     # ── Xform: Rig Root ──────────────────────────────────
     rig_xform = UsdGeom.Xform.Define(stage, rig_path)
 
     # ── Xform: Fluid Head (pan/tilt pivot) ───────────────
     head_path = f"{rig_path}/FluidHead"
     head_xform = UsdGeom.Xform.Define(stage, head_path)
-    head_xform.AddRotateXYZOp()  # tilt, pan, roll applied here
+    # Get-or-create: an upstream layer (chained rigs, re-applied edits) may
+    # already define the op; AddRotateXYZOp on an existing op order errors.
+    if not any(op.GetOpName() == "xformOp:rotateXYZ"
+               for op in head_xform.GetOrderedXformOps()):
+        head_xform.AddRotateXYZOp()  # tilt, pan, roll applied here
 
     # ── Xform: Camera Body ───────────────────────────────
     body_path = f"{head_path}/Body"
     body_xform = UsdGeom.Xform.Define(stage, body_path)
-    offsets = _BODY_OFFSETS_CM.get(camera_state.model, _DEFAULT_BODY_OFFSET)
+    offsets = mount_offset_for(body_id, camera_state.model)
     body_xform.AddTranslateOp().Set(
         Gf.Vec3d(0.0, offsets["y"], offsets["z"])
     )
@@ -105,11 +123,18 @@ def build_usd_camera_rig(
     camera.CreateFStopAttr().Set(lens_state.t_stop)
     camera.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 100000.0))
 
+    # USD shutter:open/close are fractional frames around the sample time.
+    # shutter_open = 0 (sample start), shutter_close = angle/360.
+    camera.CreateShutterOpenAttr().Set(0.0)
+    camera.CreateShutterCloseAttr().Set(
+        float(camera_state.shutter_angle_deg / 360.0)
+    )
+
     # Cinema rig custom attributes
     sensor_prim = camera.GetPrim()
     rig_attrs = {
-        "cinema:rig:entrancePupilOffsetCm": ("Float", lens_state.entrance_pupil_offset_cm),
-        "cinema:rig:combinedWeightKg":      ("Float", lens_state.rig_weight_kg),
+        "cinema:rig:entrancePupilOffsetCm": ("Float", pupil_cm),
+        "cinema:rig:combinedWeightKg":      ("Float", weight_kg),
         "cinema:rig:effectiveSqueeze":      ("Float", lens_state.effective_squeeze),
         "cinema:rig:fluidHeadModel":        ("String", fluid_head_model),
     }
@@ -131,10 +156,12 @@ def build_usd_camera_rig(
     _author_attributes(sensor_prim, lens_state.to_usd_dict())
 
     # ── Xform: Entrance Pupil (guide visualization) ──────
+    # Camera looks down -Z; the pupil sits toward the scene (negative Z).
+    # Sign convention: protocols.ENTRANCE_PUPIL_Z_SIGN.
     pupil_path = f"{sensor_path}/EntrancePupil"
     pupil_xform = UsdGeom.Xform.Define(stage, pupil_path)
     pupil_xform.AddTranslateOp().Set(
-        Gf.Vec3d(0.0, 0.0, lens_state.entrance_pupil_offset_cm)
+        Gf.Vec3d(0.0, 0.0, ENTRANCE_PUPIL_Z_SIGN * pupil_cm)
     )
     pupil_prim = pupil_xform.GetPrim()
     UsdGeom.Imageable(pupil_prim).CreatePurposeAttr().Set(
@@ -269,3 +296,29 @@ def configure_render_product(
     _author_attributes(prim, exr_metadata)
 
     return product
+
+
+def configure_render_settings(
+    stage: Usd.Stage,
+    camera_path: str,
+    camera_state: CameraState,
+    settings_path: str = "/Render/CinemaRigSettings",
+) -> UsdRender.Settings:
+    """
+    Configure UsdRender.Settings for the rig camera.
+
+    The camera is bound through the schema's `camera` RELATIONSHIP
+    (GetCameraRel) — not a string attribute; render delegates ignore a
+    string attr named "camera".
+    """
+    settings = UsdRender.Settings.Define(stage, settings_path)
+    settings.CreateResolutionAttr().Set(
+        Gf.Vec2i(camera_state.format.width_px, camera_state.format.height_px)
+    )
+    settings.GetCameraRel().SetTargets([Sdf.Path(camera_path)])
+
+    cam_name = camera_path.split("/")[-1]
+    settings.GetProductsRel().SetTargets(
+        [Sdf.Path(f"/Render/Products/{cam_name}")]
+    )
+    return settings

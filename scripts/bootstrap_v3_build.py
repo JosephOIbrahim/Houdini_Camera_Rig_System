@@ -13,7 +13,7 @@ What it does:
   2. Wipe sys.modules of all cinema_camera.* entries (drop stale cache)
   3. Set CINEMA_CAMERA_REPO env var
   4. Import cinema_camera from the repo (verify file path)
-  5. Call build_all_v3() -- builds all 6 HDAs and installs them
+  5. Call build_all_v3() -- builds all 10 HDAs and installs them
 
 Non-destructive: does not touch the local install on disk. Re-runnable.
 """

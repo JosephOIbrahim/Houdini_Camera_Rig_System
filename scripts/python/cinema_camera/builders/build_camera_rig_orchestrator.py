@@ -67,16 +67,29 @@ def build_camera_rig_orchestrator_hda(
     cam.setGenericFlag(hou.nodeFlag.Display, True)
     cam.setGenericFlag(hou.nodeFlag.Render, True)
 
-    # ── 3. Null: Entrance Pupil Pivot ────────────────────
-    # This null offsets the camera pivot to the entrance pupil
-    # for parallax-correct panning (Pillar B)
+    # ── 3. Null: Fluid Head Mount ────────────────────────
+    # Carries the biomechanics-filtered pan/tilt/roll (pulled from the
+    # CHOP chain via chop() expressions, wired in step 10c). Its origin
+    # IS the rotation pivot of the rig.
+    fluid_head = temp_subnet.createNode("null", "fluid_head_mount")
+    fluid_head.setComment(
+        "Fluid Head Mount\n"
+        "Biomechanics-filtered pan/tilt/roll (chop() from biomechanics/OUT_biomech)"
+    )
+    fluid_head.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+
+    # ── 4. Null: Entrance Pupil Pivot ────────────────────
+    # Sits AT the fluid-head origin = the entrance pupil (nodal point).
+    # The camera is parented under it and offset BEHIND it (step 10), so
+    # fluid-head rotations pivot about the pupil: parallax-correct pans
+    # (Pillar B). The null itself is the visual guide ring.
     pupil_pivot = temp_subnet.createNode("null", "entrance_pupil_pivot")
     pupil_pivot.setComment(
-        "Entrance Pupil Offset\n"
-        "Shifts pivot to nodal point for parallax-correct pans"
+        "Entrance Pupil Pivot\n"
+        "Rotation pivot at the nodal point; camera hangs behind it"
     )
     pupil_pivot.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-    # Task 4.2: Viewport overlay -- show guide geometry at nodal point
+    # Viewport overlay -- guide geometry at the nodal point
     pupil_pivot.parm("controltype").set(1)  # 1 = Circles
     pupil_pivot.parm("orientation").set(2)  # 2 = ZX plane (camera-facing)
     pupil_pivot.parm("dcolorr").set(1.0)
@@ -90,24 +103,29 @@ def build_camera_rig_orchestrator_hda(
     # is the only thing the user sees on instantiation.
     pupil_pivot.setGenericFlag(hou.nodeFlag.Display, False)
 
-    # ── 4. Null: Fluid Head Mount ────────────────────────
-    # This is the attachment point for CHOPs biomechanics output
-    fluid_head = temp_subnet.createNode("null", "fluid_head_mount")
-    fluid_head.setComment(
-        "Fluid Head Mount\n"
-        "CHOPs biomechanics exports rotations here"
-    )
-    fluid_head.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    # ── 4b. Object-level parenting ───────────────────────
+    # fluid_head (rotations) -> pupil_pivot (pivot at nodal point) -> cam
+    # (offset behind the pivot). Without these inputs the three nodes are
+    # unrelated siblings and the "rig" doesn't rig.
+    pupil_pivot.setFirstInput(fluid_head)
+    cam.setFirstInput(pupil_pivot)
 
     # ── 5. CHOPs network: biomechanics ───────────────────
     chop_net = temp_subnet.createNode("chopnet", "biomechanics")
     chop_net.setComment("Biomechanics CHOPs\nSpring/Lag/Shake solver")
     chop_net.setGenericFlag(hou.nodeFlag.DisplayComment, True)
 
-    # Inside CHOPs: fetch -> biomechanics HDA -> output
+    # Inside CHOPs: fetch (HDA target parms) -> biomechanics HDA -> output
     ch_fetch = chop_net.createNode("fetch", "camera_channels")
-    ch_fetch.setComment("Fetch raw camera animation channels")
+    ch_fetch.setComment(
+        "Fetch the HDA's keyframable target_pan/tilt/roll parms"
+    )
     ch_fetch.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    # Fetch the orchestrator's own target parms (two levels up).
+    ch_fetch.parm("nodepath").set("../..")
+    ch_fetch.parm("path").set(
+        "target_pan_deg target_tilt_deg target_roll_deg"
+    )
 
     # Biomechanics sub-HDA instance
     try:
@@ -212,7 +230,7 @@ def build_camera_rig_orchestrator_hda(
 
     # ── 9. Build HDA parameter interface ─────────────────
     ptg = hda_node.parmTemplateGroup()
-    for folder in build_camera_rig_parm_templates():
+    for folder in build_camera_rig_parm_templates(context="obj"):
         ptg.append(folder)
     hda_def.setParmTemplateGroup(ptg)
 
@@ -229,17 +247,39 @@ def build_camera_rig_orchestrator_hda(
             cam_node.parm("shutter").setExpression(
                 'ch("../shutter_angle_deg") / 360.0'
             )
+        # Viewport DOF: focus distance (meters = /obj scene units) + f-stop.
+        if cam_node.parm("focus") is not None:
+            cam_node.parm("focus").setExpression('ch("../focus_distance_m")')
+        if cam_node.parm("fstop") is not None:
+            cam_node.parm("fstop").setExpression('ch("../t_stop")')
+        # The camera hangs BEHIND the pivot (pupil) by the pupil offset.
+        # /obj works in meters: mm -> m is /1000. Sign: the pupil sits
+        # toward the scene (-Z, protocols.ENTRANCE_PUPIL_Z_SIGN), so the
+        # camera goes the other way (+Z).
+        cam_node.parm("tz").setExpression(
+            'ch("../entrance_pupil_offset_mm") / 1000.0'
+        )
 
-    # Wire entrance pupil offset to pivot null
+    # Entrance pupil pivot: sits AT the pivot (parent origin) -- it is
+    # the guide ring, not an offset. Display driven by the top-level
+    # "show_nodal_guide" toggle; hidden by default.
     pivot_node = hda_node.node("entrance_pupil_pivot")
     if pivot_node:
-        # Offset along camera Z axis (negative = toward scene)
-        pivot_node.parm("tz").setExpression(
-            '-ch("../entrance_pupil_offset_mm") / 10.0'
-        )
-        # Drive Display state from the top-level "show_nodal_guide" toggle.
-        # Hidden by default; user enables for parallax-correct pan setup.
         pivot_node.parm("display").setExpression('ch("../show_nodal_guide")')
+
+    # ── 10c. Fluid head driven by the biomechanics CHOP chain ──
+    # Pull-based chop() references (no Export flag fragility): the
+    # filtered target channels drive the fluid-head rotations.
+    fluid_node = hda_node.node("fluid_head_mount")
+    if fluid_node:
+        for parm_name, channel in (
+            ("rx", "target_tilt_deg"),
+            ("ry", "target_pan_deg"),
+            ("rz", "target_roll_deg"),
+        ):
+            fluid_node.parm(parm_name).setExpression(
+                'chop("../biomechanics/OUT_biomech/{}")'.format(channel)
+            )
 
     # ── 10b. Wire sub-HDA parameters to orchestrator ─────
     # Relative path from sub-HDA (2 levels deep) to orchestrator: ../../parm_name
