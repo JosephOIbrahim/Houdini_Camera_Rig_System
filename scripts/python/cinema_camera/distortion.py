@@ -127,3 +127,91 @@ def g_inverse(qx: float, qy: float, c: DistortionCoeffs,
         x -= (j11 * ex - j01 * ey) / det
         y -= (-j10 * ex + j00 * ey) / det
     return x, y
+
+
+# ════════════════════════════════════════════════════════════
+# ANAMORPHIC: 3DE "Anamorphic - Standard, Degree 4"
+# ════════════════════════════════════════════════════════════
+#
+# A cylindrical front group distorts the two axes differently, so no isotropic
+# radial polynomial can reproduce it. The 3DE Anamorphic-Standard model is a
+# per-axis even polynomial in polar dn coords with cos2phi / cos4phi angular
+# terms (10 distortion coeffs at degree 4). Expanded to Cartesian (no trig),
+# with s = r^2, d = r^2*cos2phi = x^2 - y^2, and r^4*cos4phi = 2*d^2 - s^2:
+#
+#   gx = x * (1 + cx02*s + cx22*d + cx04*s^2 + cx24*s*d + cx44*(2*d^2 - s^2))
+#   gy = y * (1 + cy02*s + cy22*d + cy04*s^2 + cy24*s*d + cy44*(2*d^2 - s^2))
+#
+# The ~2x anamorphic SQUEEZE is a SEPARATE filmback rescale (rpa) applied
+# OUTSIDE this polynomial (in the lens shader's projection), NOT folded in --
+# that is the fix over the old radial+X-stretch. When cx22=cy22=cx24=cy24=
+# cx44=cy44=0 and cx0k==cy0k, this reduces exactly to the spherical radial g.
+
+
+@dataclass(frozen=True)
+class AnamorphicCoeffs:
+    """3DE Anamorphic-Standard Deg-4 (10 coeffs) in dn coords + lens center."""
+    cx02: float = 0.0
+    cx22: float = 0.0
+    cx04: float = 0.0
+    cx24: float = 0.0
+    cx44: float = 0.0
+    cy02: float = 0.0
+    cy22: float = 0.0
+    cy04: float = 0.0
+    cy24: float = 0.0
+    cy44: float = 0.0
+    cx: float = 0.0
+    cy: float = 0.0
+
+    @classmethod
+    def from_radial(cls, c2=0.0, c4=0.0) -> "AnamorphicCoeffs":
+        """Isotropic radial as an anamorphic coeff set (cos2phi terms 0)."""
+        return cls(cx02=c2, cy02=c2, cx04=c4, cy04=c4)
+
+
+def g_anamorphic(x: float, y: float, c: AnamorphicCoeffs) -> tuple[float, float]:
+    """Distorted -> undistorted (per-axis cos2phi/cos4phi), at a dn point."""
+    x -= c.cx
+    y -= c.cy
+    s = x * x + y * y
+    d = x * x - y * y
+    c4 = 2.0 * d * d - s * s
+    rx = 1.0 + c.cx02 * s + c.cx22 * d + c.cx04 * s * s + c.cx24 * s * d + c.cx44 * c4
+    ry = 1.0 + c.cy02 * s + c.cy22 * d + c.cy04 * s * s + c.cy24 * s * d + c.cy44 * c4
+    return x * rx + c.cx, y * ry + c.cy
+
+
+def jacobian_anamorphic(x: float, y: float, c: AnamorphicCoeffs):
+    """Analytic Jacobian (dgx_dx, dgx_dy, dgy_dx, dgy_dy) of g_anamorphic."""
+    x -= c.cx
+    y -= c.cy
+    s = x * x + y * y
+    d = x * x - y * y
+    c4 = 2.0 * d * d - s * s
+    rx = 1.0 + c.cx02 * s + c.cx22 * d + c.cx04 * s * s + c.cx24 * s * d + c.cx44 * c4
+    ry = 1.0 + c.cy02 * s + c.cy22 * d + c.cy04 * s * s + c.cy24 * s * d + c.cy44 * c4
+    # d(rx)/dx = 2x[cx02 + cx22 + 2s*cx04 + cx24(d+s) + 2cx44(2d-s)]
+    drx_dx = 2.0 * x * (c.cx02 + c.cx22 + 2.0 * s * c.cx04 + c.cx24 * (d + s) + 2.0 * c.cx44 * (2.0 * d - s))
+    drx_dy = 2.0 * y * (c.cx02 - c.cx22 + 2.0 * s * c.cx04 + c.cx24 * (d - s) - 2.0 * c.cx44 * (2.0 * d + s))
+    dry_dx = 2.0 * x * (c.cy02 + c.cy22 + 2.0 * s * c.cy04 + c.cy24 * (d + s) + 2.0 * c.cy44 * (2.0 * d - s))
+    dry_dy = 2.0 * y * (c.cy02 - c.cy22 + 2.0 * s * c.cy04 + c.cy24 * (d - s) - 2.0 * c.cy44 * (2.0 * d + s))
+    return (rx + x * drx_dx, x * drx_dy, y * dry_dx, ry + y * dry_dy)
+
+
+def g_anamorphic_inverse(qx: float, qy: float, c: AnamorphicCoeffs,
+                         iters: int = 14, tol: float = 1e-10) -> tuple[float, float]:
+    """Undistorted -> distorted: Newton with the anamorphic analytic Jacobian."""
+    x, y = qx, qy
+    for _ in range(iters):
+        gx, gy = g_anamorphic(x, y, c)
+        ex, ey = gx - qx, gy - qy
+        if ex * ex + ey * ey < tol * tol:
+            break
+        j00, j01, j10, j11 = jacobian_anamorphic(x, y, c)
+        det = j00 * j11 - j01 * j10
+        if abs(det) < 1e-12:
+            break
+        x -= (j11 * ex - j01 * ey) / det
+        y -= (-j10 * ex + j00 * ey) / det
+    return x, y

@@ -20,11 +20,15 @@ if _scripts_python not in sys.path:
     sys.path.insert(0, _scripts_python)
 
 from cinema_camera.distortion import (
+    AnamorphicCoeffs,
     DistortionCoeffs,
     dn_norm,
     g,
+    g_anamorphic,
+    g_anamorphic_inverse,
     g_inverse,
     jacobian,
+    jacobian_anamorphic,
 )
 
 
@@ -108,3 +112,54 @@ def test_brown_conrady_bridge_maps_fields():
     c = DistortionCoeffs.from_brown_conrady(k1=-0.02, k2=0.003, k3=1e-4, p1=0.001, p2=-0.002)
     assert (c.c2, c.c4, c.c6) == (-0.02, 0.003, 1e-4)
     assert (c.u2, c.v2) == (-0.002, 0.001)   # u2<-p2, v2<-p1
+
+
+# ── Anamorphic 3DE model ───────────────────────────────────
+
+ACOEFFS = AnamorphicCoeffs(cx02=-0.06, cx22=0.02, cx04=0.01, cx24=-0.004, cx44=0.002,
+                           cy02=-0.09, cy22=-0.015, cy04=0.008, cy24=0.003, cy44=-0.001,
+                           cx=0.012, cy=-0.007)
+
+
+def test_anamorphic_identity_at_zero():
+    z = AnamorphicCoeffs()
+    for x, y in GRID:
+        gx, gy = g_anamorphic(x, y, z)
+        assert (gx, gy) == pytest.approx((x, y), abs=1e-12)
+
+
+def test_anamorphic_reduces_to_radial():
+    # cos2phi terms zero + cx0k==cy0k -> exactly the isotropic radial g (u2=v2=0).
+    an = AnamorphicCoeffs.from_radial(c2=-0.05, c4=0.012)
+    rad = DistortionCoeffs(c2=-0.05, c4=0.012)   # c6=0, no decentering
+    for x, y in GRID:
+        assert g_anamorphic(x, y, an) == pytest.approx(g(x, y, rad), abs=1e-12)
+
+
+def test_anamorphic_is_non_radial():
+    # Different per-axis coeffs give the two axes different radial factors:
+    # gx/x != gy/y. A radial model (gx=x*R, gy=y*R, same R) forces them equal,
+    # so this is exactly what a cylindrical anamorphic can do and radial cannot.
+    c = AnamorphicCoeffs(cx02=-0.10, cy02=-0.04)
+    x, y = 0.5, 0.4
+    gx, gy = g_anamorphic(x, y, c)
+    assert abs(gx / x - gy / y) > 1e-3
+
+
+def test_anamorphic_analytic_jacobian_matches_fd():
+    h = 1e-6
+    for x, y in GRID:
+        j00, j01, j10, j11 = jacobian_anamorphic(x, y, ACOEFFS)
+        gpx = g_anamorphic(x + h, y, ACOEFFS); gmx = g_anamorphic(x - h, y, ACOEFFS)
+        gpy = g_anamorphic(x, y + h, ACOEFFS); gmy = g_anamorphic(x, y - h, ACOEFFS)
+        assert j00 == pytest.approx((gpx[0] - gmx[0]) / (2 * h), abs=2e-4)
+        assert j10 == pytest.approx((gpx[1] - gmx[1]) / (2 * h), abs=2e-4)
+        assert j01 == pytest.approx((gpy[0] - gmy[0]) / (2 * h), abs=2e-4)
+        assert j11 == pytest.approx((gpy[1] - gmy[1]) / (2 * h), abs=2e-4)
+
+
+def test_anamorphic_roundtrip():
+    for x, y in GRID:
+        qx, qy = g_anamorphic(x, y, ACOEFFS)
+        px, py = g_anamorphic_inverse(qx, qy, ACOEFFS)
+        assert (px, py) == pytest.approx((x, y), abs=1e-7)

@@ -279,4 +279,77 @@ co_redistort_gi(
 }
 
 
+// ════════════════════════════════════════════════════════════
+// v5.0 ANAMORPHIC: 3DE "Anamorphic - Standard, Degree 4" (dn)
+// ════════════════════════════════════════════════════════════
+//
+// Mirrors scripts/python/cinema_camera/distortion.py (AnamorphicCoeffs /
+// g_anamorphic), verified headless (round-trip, analytic Jacobian == finite
+// difference, reduces-to-radial). Per-axis even polynomial in dn coords with
+// cos2phi/cos4phi terms -- reproduces the horizontal/vertical asymmetry an
+// isotropic radial polynomial cannot. The ~2x SQUEEZE is NOT here: it is the
+// separate filmback rescale (rpa) applied in the lens shader's projection.
+//
+//   s = x^2+y^2;  d = x^2-y^2 (= r^2 cos2phi);  c4 = 2 d^2 - s^2 (= r^4 cos4phi)
+//   gx = x (1 + cx02 s + cx22 d + cx04 s^2 + cx24 s d + cx44 c4)
+//   gy = y (1 + cy02 s + cy22 d + cy04 s^2 + cy24 s d + cy44 c4)
+
+struct CO_AnamorphicCoeffs {
+    float cx02; float cx22; float cx04; float cx24; float cx44;
+    float cy02; float cy22; float cy04; float cy24; float cy44;
+    float cx; float cy;     // lens-center offset (dn units)
+};
+
+// g(distorted) -> undistorted, at a dn point.
+vector2
+co_anamorphic_undistort_g(
+    vector2 uv_dn;
+    CO_AnamorphicCoeffs c
+) {
+    float x = uv_dn.x - c.cx;
+    float y = uv_dn.y - c.cy;
+    float s = x*x + y*y;
+    float d = x*x - y*y;
+    float c4 = 2.0*d*d - s*s;
+    float rx = 1.0 + c.cx02*s + c.cx22*d + c.cx04*s*s + c.cx24*s*d + c.cx44*c4;
+    float ry = 1.0 + c.cy02*s + c.cy22*d + c.cy04*s*s + c.cy24*s*d + c.cy44*c4;
+    return set(x*rx + c.cx, y*ry + c.cy);
+}
+
+// gi(undistorted) -> distorted: Newton with the analytic Jacobian (inlined).
+vector2
+co_anamorphic_redistort_gi(
+    vector2 q_dn;
+    CO_AnamorphicCoeffs c;
+    int max_iter
+) {
+    vector2 p = q_dn;
+    for (int i = 0; i < max_iter; i++) {
+        float x = p.x - c.cx;
+        float y = p.y - c.cy;
+        float s = x*x + y*y;
+        float d = x*x - y*y;
+        float c4 = 2.0*d*d - s*s;
+        float rx = 1.0 + c.cx02*s + c.cx22*d + c.cx04*s*s + c.cx24*s*d + c.cx44*c4;
+        float ry = 1.0 + c.cy02*s + c.cy22*d + c.cy04*s*s + c.cy24*s*d + c.cy44*c4;
+        float ex = (x*rx + c.cx) - q_dn.x;
+        float ey = (y*ry + c.cy) - q_dn.y;
+        if (ex*ex + ey*ey < 1e-20) break;
+        float drx_dx = 2.0*x*(c.cx02 + c.cx22 + 2.0*s*c.cx04 + c.cx24*(d+s) + 2.0*c.cx44*(2.0*d-s));
+        float drx_dy = 2.0*y*(c.cx02 - c.cx22 + 2.0*s*c.cx04 + c.cx24*(d-s) - 2.0*c.cx44*(2.0*d+s));
+        float dry_dx = 2.0*x*(c.cy02 + c.cy22 + 2.0*s*c.cy04 + c.cy24*(d+s) + 2.0*c.cy44*(2.0*d-s));
+        float dry_dy = 2.0*y*(c.cy02 - c.cy22 + 2.0*s*c.cy04 + c.cy24*(d-s) - 2.0*c.cy44*(2.0*d+s));
+        float j00 = rx + x*drx_dx;
+        float j01 = x*drx_dy;
+        float j10 = y*dry_dx;
+        float j11 = ry + y*dry_dy;
+        float det = j00*j11 - j01*j10;
+        if (abs(det) < 1e-12) break;
+        p.x -= ( j11*ex - j01*ey) / det;
+        p.y -= (-j10*ex + j00*ey) / det;
+    }
+    return p;
+}
+
+
 #endif // __LIBCINEMA_OPTICS_H__
