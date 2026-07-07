@@ -19,12 +19,14 @@
 // ════════════════════════════════════════════════════════════
 
 struct CO_DistortionCoeffs {
-    float k1;                   // Radial (barrel/pincushion)
-    float k2;                   // Higher-order radial
-    float k3;                   // Highest-order radial
-    float p1;                   // Tangential
-    float p2;                   // Tangential
+    float k1;                   // Radial (barrel/pincushion)  | dn 3DE: c2
+    float k2;                   // Higher-order radial          | dn 3DE: c4
+    float k3;                   // Highest-order radial         | dn 3DE: c6
+    float p1;                   // Tangential                   | dn 3DE: v2
+    float p2;                   // Tangential                   | dn 3DE: u2
     float squeeze_uniformity;   // 1.0 = perfect, <1.0 = varies across frame
+    float cx;                   // Lens-center offset X (dn units; default 0)
+    float cy;                   // Lens-center offset Y (dn units; default 0)
 };
 
 
@@ -197,6 +199,83 @@ co_apply_anamorphic_distortion(
     float distorted_y = (y * radial + dy) * sq_var;
 
     return set(distorted_x, distorted_y);
+}
+
+
+// ════════════════════════════════════════════════════════════
+// v5.0 dn-NORMALIZED 3DE RADIAL-STANDARD (matchmove-portable)
+// ════════════════════════════════════════════════════════════
+//
+// Mirrors scripts/python/cinema_camera/distortion.py, which is verified
+// headless: g<->inverse round-trip to 1e-7 dn and analytic-Jacobian ==
+// finite-difference (cinema_camera/tests/test_distortion.py). Operates in
+// diagonally-normalized (dn) coords -- origin at the lens center, radius = 1
+// at the frame corner. The CALLER (lens shader / STMap COP) does NDC<->dn
+// normalization: dn = (ndc_xy_aspect_corrected) / (0.5 * image_diagonal).
+//
+// Brown-Conrady bridge from the existing coeff storage: c2=k1, c4=k2, c6=k3,
+// u2=p2, v2=p1 (deg-4 decentering u4=v4=0). Direction: co_undistort_g maps
+// DISTORTED -> UNDISTORTED (LDPK g) -- the lens shader applies it directly to
+// Karma's distorted raster sample to shoot the ideal rectilinear ray.
+// co_redistort_gi is its Newton inverse (undistorted -> distorted), used to
+// bake the ST-map "redistort" layer.
+//
+// ADDITIVE: the v3.0 co_apply_distortion / co_undistort and v4.0 anamorphic
+// paths are unchanged; wiring the shader/COP over to these is a deliberate,
+// render-verified step (empirical NDC->dn constant must be confirmed on the
+// target Karma build first).
+
+// g(distorted) -> undistorted, at a dn point. PERF: O(1) per pixel.
+vector2
+co_undistort_g(
+    vector2 uv_dn;
+    CO_DistortionCoeffs c
+) {
+    float x = uv_dn.x - c.cx;
+    float y = uv_dn.y - c.cy;
+    float s = x*x + y*y;
+    float radial = 1.0 + c.k1*s + c.k2*s*s + c.k3*s*s*s;   // c2, c4, c6
+    float a = c.p2;   // u2 (deg-2 decentering; u4 = 0)
+    float b = c.p1;   // v2 (v4 = 0)
+    float gx = x*radial + (s + 2.0*x*x)*a + 2.0*x*y*b;
+    float gy = y*radial + (s + 2.0*y*y)*b + 2.0*x*y*a;
+    return set(gx + c.cx, gy + c.cy);
+}
+
+// gi(undistorted) -> distorted: Newton with the analytic Jacobian (inlined).
+// Quadratic, edge-robust; seed p = q. PERF: O(iters), ~5-10 typical.
+vector2
+co_redistort_gi(
+    vector2 q_dn;
+    CO_DistortionCoeffs c;
+    int max_iter
+) {
+    vector2 p = q_dn;
+    for (int i = 0; i < max_iter; i++) {
+        float x = p.x - c.cx;
+        float y = p.y - c.cy;
+        float s = x*x + y*y;
+        float radial  = 1.0 + c.k1*s + c.k2*s*s + c.k3*s*s*s;
+        float dradial = c.k1 + 2.0*c.k2*s + 3.0*c.k3*s*s;   // d(radial)/ds
+        float a = c.p2;   // u2
+        float b = c.p1;   // v2
+        // g(p) - q  (error)
+        float gx = x*radial + (s + 2.0*x*x)*a + 2.0*x*y*b;
+        float gy = y*radial + (s + 2.0*y*y)*b + 2.0*x*y*a;
+        float ex = (gx + c.cx) - q_dn.x;
+        float ey = (gy + c.cy) - q_dn.y;
+        if (ex*ex + ey*ey < 1e-20) break;
+        // analytic Jacobian of g at p (u4=v4=0)
+        float j00 = radial + 2.0*x*x*dradial + 6.0*x*a + 2.0*y*b;
+        float j01 = 2.0*x*y*dradial + 2.0*y*a + 2.0*x*b;
+        float j11 = radial + 2.0*y*y*dradial + 6.0*y*b + 2.0*x*a;
+        float j10 = 2.0*x*y*dradial + 2.0*x*b + 2.0*y*a;
+        float det = j00*j11 - j01*j10;
+        if (abs(det) < 1e-12) break;
+        p.x -= ( j11*ex - j01*ey) / det;
+        p.y -= (-j10*ex + j00*ey) / det;
+    }
+    return p;
 }
 
 
