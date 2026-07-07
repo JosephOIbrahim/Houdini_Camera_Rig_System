@@ -90,11 +90,24 @@ cinema_lens_shader(
         coeffs.squeeze_uniformity = dist_sq_uniformity;
 
         if (enable_squeeze && effective_squeeze > 1.01) {
-            // Anamorphic: Brown-Conrady + focus-dependent squeeze (mumps)
+            // Anamorphic: Brown-Conrady + focus-dependent squeeze (mumps).
+            // TODO(Tier 1 changeset 2): replace with dn cos2phi/cos4phi model +
+            // rpa projection scale; still raw-NDC here.
             uv = co_apply_anamorphic_distortion(uv, coeffs, effective_squeeze);
         } else {
-            // Spherical Brown-Conrady
-            uv = co_apply_distortion(uv, coeffs);
+            // Spherical: dn-normalized 3DE Radial-Standard (co_undistort_g maps
+            // the distorted NDC sample -> the ideal rectilinear direction).
+            //
+            // NDC->dn: Karma feeds SQUARE [-1,1] NDC with aspect = image aspect
+            // (empirically probed, Houdini 21.0.765, scripts/probe_lens_ndc.py:
+            // max|x|~=max|y|~=1.0). dn has r=1 at the frame corner:
+            //   e = sqrt(aspect^2 + 1);  dn = (x*aspect/e, y/e)
+            // At zero coefficients co_undistort_g is the identity, so the
+            // projection still matches Karma's perspective camera exactly.
+            float e = sqrt(aspect * aspect + 1.0);
+            vector2 dn = set(uv.x * aspect / e, uv.y / e);
+            dn = co_undistort_g(dn, coeffs);
+            uv = set(dn.x * e / aspect, dn.y * e);
         }
     } else if (enable_squeeze && effective_squeeze > 1.01) {
         // Squeeze only: the anamorphic front group widens horizontal FOV
