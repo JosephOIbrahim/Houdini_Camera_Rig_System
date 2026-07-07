@@ -38,7 +38,7 @@ ALEXA_65_SENSOR = SensorSpec(
 ALEXA_65_FORMATS = {
     "6.5K Open Gate": FormatSpec(6560, 3100, "6.5K Open Gate", 54.12, 25.58),
     "5.1K 16:9":      FormatSpec(5120, 2880, "5.1K 16:9", 42.24, 23.76),
-    "4.3K 16:9":      FormatSpec(4320, 2880, "4.3K 16:9", 35.64, 23.76),
+    "4.3K 3:2":       FormatSpec(4320, 2880, "4.3K 3:2", 35.64, 23.76),
     "4K UHD":         FormatSpec(3840, 2160, "4K UHD", 31.68, 17.82),
 }
 

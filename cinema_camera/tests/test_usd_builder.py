@@ -242,6 +242,14 @@ class TestCameraAttributes:
         # Focus distance: 3.0m -> 300cm
         assert cam.GetFocusDistanceAttr().Get() == pytest.approx(300.0)
 
+    def test_exposure_and_shutter_authored(self, stage, alexa35_camera, lens_state_50mm, optical_result):
+        cam = build_usd_camera_rig(stage, "/World/Rig", alexa35_camera, lens_state_50mm, optical_result)
+        # T2.8 / 180deg / 24fps / ISO800 is +2 stops vs the T5.6 reference anchor.
+        assert cam.GetExposureAttr().Get() == pytest.approx(2.0)
+        # Shutter is physically centered: -angle/720 .. +angle/720 (180deg -> +/-0.25).
+        assert cam.GetShutterOpenAttr().Get() == pytest.approx(-0.25)
+        assert cam.GetShutterCloseAttr().Get() == pytest.approx(0.25)
+
     def test_cinema_rig_attrs(self, stage, alexa35_camera, lens_state_50mm, optical_result):
         build_usd_camera_rig(stage, "/World/Rig", alexa35_camera, lens_state_50mm, optical_result)
         sensor = stage.GetPrimAtPath("/World/Rig/FluidHead/Body/Sensor")

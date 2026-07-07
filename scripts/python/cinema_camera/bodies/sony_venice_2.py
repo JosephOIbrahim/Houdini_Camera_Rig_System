@@ -34,7 +34,7 @@ VENICE_2_SENSOR = SensorSpec(
 VENICE_2_FORMATS = {
     "8.6K 3:2 Full Frame":    FormatSpec(8640, 5760, "8.6K 3:2 Full Frame", 35.90, 24.00),
     "8.2K 17:9 Full Frame":   FormatSpec(8192, 4320, "8.2K 17:9 Full Frame", 34.10, 18.00),
-    "6K Full Frame":          FormatSpec(6048, 4032, "6K Full Frame", 35.90, 23.93),
+    "6K Full Frame":          FormatSpec(6048, 4032, "6K Full Frame", 35.90, 24.00),
     "S35 5.8K 17:9 crop":     FormatSpec(5792, 3056, "S35 5.8K 17:9 crop", 24.10, 12.70),
     "S35 5.8K 6:5 (2x ana)":  FormatSpec(5792, 4854, "S35 5.8K 6:5 (2x ana)", 24.10, 20.20),
 }

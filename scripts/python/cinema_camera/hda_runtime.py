@@ -176,19 +176,22 @@ def _author_camera_timesamples(hda, cam, lens_state) -> None:
 
     fp = hda.parm("focus_distance_m")
     tp = hda.parm("t_stop")
-    if not (_animated(fp) or _animated(tp)):
+    ep = hda.parm("exposure_index")
+    sp = hda.parm("shutter_angle_deg")
+    # Any of the four exposure/DOF drivers animating warrants time samples.
+    if not any(_animated(p) for p in (fp, tp, ep, sp)):
         return
 
     spec = lens_state.spec
     fstart, fend = (int(x) for x in hou.playbar.frameRange())
-    ei = hda.evalParm("exposure_index") or 800
-    angle = hda.evalParm("shutter_angle_deg") or 180.0
     fps = hou.fps() or 24.0
 
     for f in range(fstart, fend + 1):
         tc = Usd.TimeCode(f)
         focus = max(fp.evalAsFloatAtFrame(f), spec.close_focus_m)
         tstop = min(max(tp.evalAsFloatAtFrame(f), spec.t_stop_min), spec.t_stop_max)
+        ei = int(round(ep.evalAsFloatAtFrame(f))) if ep else 800   # ISO can ramp
+        angle = sp.evalAsFloatAtFrame(f) if sp else 180.0          # shutter can ramp
         ls_f = LensState(spec=spec, t_stop=tstop, focus_distance_m=focus)
         cam.GetFocusDistanceAttr().Set(focus * 100.0, tc)          # m -> cm
         cam.GetFStopAttr().Set(ls_f.f_number, tc)                  # geometric f

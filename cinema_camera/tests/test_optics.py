@@ -7,6 +7,7 @@ the per-format active-sensor model against known values, so the metadata-only
 exposure bug and the squeeze-blind FOV bug cannot silently regress.
 """
 
+import math
 import os
 import sys
 
@@ -72,6 +73,11 @@ def test_exposure_iso_doubling():
     assert optics_engine.compute_exposure_scalar(5.6, 180.0, 24.0, 1600) == pytest.approx(1.0)
 
 
+def test_exposure_shutter_angle_term():
+    # 90deg shutter halves the exposure time vs the 180deg reference -> -1 stop.
+    assert optics_engine.compute_exposure_scalar(5.6, 90.0, 24.0, 800) == pytest.approx(-1.0)
+
+
 # ── Geometric f-number vs T-stop ───────────────────────────
 
 def test_f_number_below_t_stop():
@@ -106,6 +112,11 @@ def test_hfov_matches_anamorphic_datasheet():
     ls = LensState(spec=_spec(focal=50.0, squeeze=1.8), t_stop=2.8, focus_distance_m=1e6)
     res = optics_engine.compute_optics(cam, ls)
     assert res.hfov_deg == pytest.approx(65.7, abs=0.3)
+    # The squeeze must apply to the HORIZONTAL axis only: vertical FOV stays
+    # spherical (datasheet max vertical ~= 27.0 deg), NOT widened by 1.8x.
+    expected_vfov = 2 * math.degrees(math.atan(24.0 / (2 * 50.0)))
+    assert res.vfov_deg == pytest.approx(expected_vfov, abs=0.1)
+    assert res.vfov_deg < 30.0
 
 
 def test_spherical_fov_unaffected_by_squeeze():
@@ -144,11 +155,15 @@ def test_open_gate_falls_back_to_sensor():
 
 def test_photosite_ceiling_rejects_impossible_resolution():
     # 8192x5760 on a 40.96x21.60mm / 5.0um sensor: 5760 rows exceed photosites.
-    with pytest.raises(ValueError):
+    # FormatSpec construction itself is valid; the guard lives in CameraState,
+    # so build the format first and assert only the CameraState raises (for the
+    # right reason -- a photosite overflow, not some unrelated ValueError).
+    bad_format = FormatSpec(8192, 5760, "impossible", 40.96, 21.60)
+    with pytest.raises(ValueError, match="photosites"):
         CameraState(
             model="Bad",
             sensor=SensorSpec(width_mm=40.96, height_mm=21.60, pixel_pitch_um=5.0),
-            format=FormatSpec(8192, 5760, "impossible", 40.96, 21.60),
+            format=bad_format,
         )
 
 

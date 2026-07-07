@@ -29,7 +29,7 @@ ALEXA_MINI_LF_SENSOR = SensorSpec(
 
 ALEXA_MINI_LF_FORMATS = {
     "4.5K LF Open Gate":       FormatSpec(4448, 3096, "4.5K LF Open Gate", 36.70, 25.54),
-    "4.5K LF 16:9":            FormatSpec(4448, 2502, "4.5K LF 16:9", 36.70, 20.64),
+    "4.3K LF 16:9":            FormatSpec(4320, 2430, "4.3K LF 16:9", 35.64, 20.05),
     "UHD LF 16:9":             FormatSpec(3840, 2160, "UHD LF 16:9", 31.68, 17.82),
     "S35 2.8K 4:3 (2x ana)":   FormatSpec(2880, 2160, "S35 2.8K 4:3 (2x ana)", 23.76, 17.82),
 }
