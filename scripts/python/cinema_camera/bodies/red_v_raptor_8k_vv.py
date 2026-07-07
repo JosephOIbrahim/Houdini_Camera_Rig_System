@@ -7,9 +7,9 @@ Color Science: REDWideGamutRGB / Log3G10 (IPP2 pipeline)
 Body Weight: 2.5 kg (body + RED touch LCD + V-mount battery, operational rig weight)
 
 Notes:
-  RED's flagship VistaVision format body. 8192 x 4320 native at 17:9; 8K 3:2
-  full readout available (8192 x 5760). VV sensor (40.96 x 21.60 mm in 17:9
-  mode) covers Cooke S35 anamorphic with mild vignetting at edges; use the
+  RED's flagship VistaVision format body. 8192 x 4320 full VV readout (35.4 MP;
+  lower resolutions are center-crop windows, not downsamples). VV sensor
+  (40.96 x 21.60 mm) covers Cooke S35 anamorphic with mild vignetting; use the
   6K S35 crop format for clean S35 anamorphic coverage. Pair with Cooke
   Anamorphic/i Full Frame Plus line for full VV anamorphic at native readout.
 
@@ -31,12 +31,12 @@ V_RAPTOR_8K_VV_SENSOR = SensorSpec(
     pixel_pitch_um=5.0,
 )
 
+# Center-crop windows (native 5.0um pitch). The fabricated "8K VV 3:2 Full"
+# 8192x5760 exceeded the VV sensor's 4320 physical rows -- dropped.
 V_RAPTOR_8K_VV_FORMATS = {
-    "8K VV 17:9":               FormatSpec(8192, 4320, "8K VV 17:9"),
-    "8K VV 3:2 Full":           FormatSpec(8192, 5760, "8K VV 3:2 Full"),
-    "6K S35 Anamorphic crop":   FormatSpec(6144, 3240, "6K S35 Anamorphic crop"),
-    "6K VV 17:9":               FormatSpec(6144, 3240, "6K VV 17:9"),
-    "4K S35 16:9":              FormatSpec(4096, 2160, "4K S35 16:9"),
+    "8K VV 17:9":              FormatSpec(8192, 4320, "8K VV 17:9", 40.96, 21.60),
+    "6K S35 Anamorphic crop":  FormatSpec(6144, 3240, "6K S35 Anamorphic crop", 30.72, 16.20),
+    "4K S35 16:9":             FormatSpec(4096, 2160, "4K S35 16:9", 20.48, 10.80),
 }
 
 BODY_WEIGHT_KG = 2.5

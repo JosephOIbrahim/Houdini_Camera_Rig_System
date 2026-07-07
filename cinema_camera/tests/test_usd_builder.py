@@ -236,7 +236,9 @@ class TestCameraAttributes:
         assert cam.GetHorizontalApertureAttr().Get() == pytest.approx(27.99)
         assert cam.GetVerticalApertureAttr().Get() == pytest.approx(19.22)
         assert cam.GetFocalLengthAttr().Get() == pytest.approx(50.0)
-        assert cam.GetFStopAttr().Get() == pytest.approx(2.8)
+        # fStop is the geometric f-number (T-stop * sqrt(transmission)), which
+        # drives DoF; the T-stop itself is reserved for exposure.
+        assert cam.GetFStopAttr().Get() == pytest.approx(2.8 * (0.85 ** 0.5), abs=1e-4)
         # Focus distance: 3.0m -> 300cm
         assert cam.GetFocusDistanceAttr().Get() == pytest.approx(300.0)
 

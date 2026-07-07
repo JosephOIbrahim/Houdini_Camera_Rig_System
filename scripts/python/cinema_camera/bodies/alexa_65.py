@@ -33,11 +33,13 @@ ALEXA_65_SENSOR = SensorSpec(
     pixel_pitch_um=8.25,
 )
 
+# Real A65 modes (the fabricated "6K 16:9 Spherical" 6560x3694 exceeded the
+# sensor's physical rows -- dropped). px + active mm (native 8.25um pitch).
 ALEXA_65_FORMATS = {
-    "6.5K Open Gate":           FormatSpec(6560, 3102, "6.5K Open Gate"),
-    "6K 16:9 Spherical":        FormatSpec(6560, 3694, "6K 16:9 Spherical"),
-    "5K 16:9":                  FormatSpec(5120, 2880, "5K 16:9"),
-    "Sup35 Anamorphic crop":    FormatSpec(2208, 1242, "Sup35 Anamorphic crop"),
+    "6.5K Open Gate": FormatSpec(6560, 3100, "6.5K Open Gate", 54.12, 25.58),
+    "5.1K 16:9":      FormatSpec(5120, 2880, "5.1K 16:9", 42.24, 23.76),
+    "4.3K 16:9":      FormatSpec(4320, 2880, "4.3K 16:9", 35.64, 23.76),
+    "4K UHD":         FormatSpec(3840, 2160, "4K UHD", 31.68, 17.82),
 }
 
 BODY_WEIGHT_KG = 11.2
