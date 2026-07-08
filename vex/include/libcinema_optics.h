@@ -353,6 +353,60 @@ co_anamorphic_redistort_gi(
 
 
 // ════════════════════════════════════════════════════════════
+// v5.0 PUPIL / BOKEH (lens-shader aperture-sample operations)
+// ════════════════════════════════════════════════════════════
+//
+// Mirrors scripts/python/cinema_camera/pupil.py, verified headless
+// (cinema_camera/tests/test_pupil.py). Karma hands the lens shader a UNIFORM
+// sample on the NORMALIZED unit disc (|dof| <= 1, f-stop-independent --
+// empirically probed 21.0.765), so f-stop-dependent effects must scale to
+// physical pupil units via R_ap = focal / (2*fstop).
+
+// Reshape a unit-disc sample into an N-gon iris (vertices at radius 1, edges
+// at cos(pi/N)). curvature in [0,1] bows edges toward the circle.
+vector2
+co_pupil_polygon(vector2 dof; int blades; float rotation_deg; float curvature)
+{
+    if (blades < 3) return dof;
+    float theta = atan2(dof.y, dof.x) + radians(rotation_deg);
+    float ba = 6.2831853071795865 / (float)blades;
+    float sector = theta - ba * rint(theta / ba);        // fold to [-ba/2, ba/2]
+    float r_poly = cos(3.1415926535897932 / (float)blades) / cos(sector);
+    r_poly = (1.0 - curvature) * r_poly + curvature;
+    return dof * r_poly;
+}
+
+// Spherical-aberration apodization weight, r = |sample|/aperture_radius in
+// [0,1], normalized so mean over the uniform disc == 1 (exposure-neutral for
+// in-focus points). strength > 0 = creamy roll-off; < 0 = rim-boosted nervous.
+float
+co_pupil_apodization(float r; float strength)
+{
+    float a = clamp(strength, -4.0, 1.9);
+    return (1.0 - a*r*r) / (1.0 - a*0.5);
+}
+
+// Mechanical-vignette / cat's-eye field-dependent pupil clip. Returns 1 if the
+// unit-disc sample survives, 0 to reject (rejected samples average toward black
+// -> darkening; the vesica geometry gives the lemon shape; the fixed physical
+// occlusion vs the f-stop-shrinking pupil gives automatic stop-down recovery).
+// rv_rel, k_rel are the occlusion radius / offset-per-field as fractions of focal.
+int
+co_pupil_catseye_valid(vector2 dof; vector2 field; float fstop; float focal;
+                       float rv_rel; float k_rel; float image_circle)
+{
+    float rho = length(field);
+    if (rho > image_circle) return 0;
+    float r_ap = (fstop > 0.0) ? focal / (2.0 * fstop) : focal * 0.5;
+    vector2 pd = dof * r_ap;                              // physical pupil sample
+    // -k*(x,y): flat side toward the corner -> physical cat's-eye orientation.
+    vector2 c  = set(-k_rel * focal * field.x, -k_rel * focal * field.y);
+    float rv = rv_rel * focal;
+    return (length(pd - c) <= rv) ? 1 : 0;
+}
+
+
+// ════════════════════════════════════════════════════════════
 // ST-MAP SAMPLING (shared by the render inverse + the COP bake)
 // ════════════════════════════════════════════════════════════
 //

@@ -109,5 +109,19 @@ def bind_lens_shader(
         "dist_k3": d.k3,
         "dist_p1": d.p1,
         "dist_p2": d.p2,
+        # Pupil / bokeh (Tier 2). iris_blades is real lens data; the bokeh
+        # CHARACTER (apodization, blade curvature, mechanical-vignette Rv/k) is
+        # a look default here until lens-schema-v5 carries measured per-lens
+        # values. Polygonal iris is on by default (physically the lens has N
+        # blades; near-circular for cinema counts >= 9). Vignette is opt-in.
+        "enable_bokeh":      1,
+        "iris_blades":       lens_state.spec.iris_blades,
+        "iris_rotation_deg": 0.0,
+        "blade_curvature":   0.0,
+        "apodization":       0.0,
+        "enable_vignette":   0,
+        "vignette_rv":       0.5,
+        "vignette_k":        0.2,
+        "image_circle":      10.0,
     }
     return author_lens_shader(stage, camera_path, values)
