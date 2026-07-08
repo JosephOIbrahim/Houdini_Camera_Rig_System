@@ -62,6 +62,7 @@ cinema_lens_shader(
         export vector P = {0, 0, 0};
         export vector I = {0, 0, 0};
         export int valid = 1;
+        export vector tint = {1, 1, 1};     // per-ray weight (apodization/vignette)
 
         // ── Cinema shader arguments (from the opdef binding) ─────
         float effective_squeeze = 1.0;
@@ -75,6 +76,17 @@ cinema_lens_shader(
         int   enable_distortion = 1;
         int   enable_squeeze = 1;
         int   enable_pupil_offset = 1;
+
+        // ── Pupil / bokeh (Tier 2) ───────────────────────────────
+        int   enable_bokeh = 0;
+        int   iris_blades = 6;
+        float iris_rotation_deg = 0.0;
+        float blade_curvature = 0.0;        // 0 = straight polygon, 1 = round
+        float apodization = 0.0;            // >0 creamy, <0 nervous (mean-1)
+        int   enable_vignette = 0;
+        float vignette_rv = 0.5;            // occlusion radius / focal
+        float vignette_k = 0.2;             // occlusion offset per field / focal
+        float image_circle = 10.0;          // hard field-radius cutoff (NDC; large = off)
 )
 {
     // ── Optical distortion (dn 3DE) + anamorphic squeeze (rpa) ──
@@ -125,8 +137,28 @@ cinema_lens_shader(
             uv.y * aperture * 0.5 / focal,
             -1.0);              // RHS: look down -Z
 
-    // ── Thin-lens origin: aperture-disk sample at the pupil ─────
-    P = set(dofx, dofy, 0.0);
+    // ── Pupil sample: apodization + polygonal iris + mechanical vignette ─
+    // Karma hands us a UNIFORM unit-disc sample (dofx,dofy). Reshape it into the
+    // real iris and weight/clip it for spherical-aberration and cat's-eye bokeh.
+    vector2 pupil = set(dofx, dofy);
+    if (enable_bokeh) {
+        // Spherical-aberration apodization on the ORIGINAL aperture fraction
+        // (mean=1 over the disc, so in-focus points stay exposure-neutral).
+        tint *= co_pupil_apodization(length(pupil), apodization);
+        // Polygonal iris (blade count / rotation / curvature).
+        pupil = co_pupil_polygon(pupil, iris_blades, iris_rotation_deg, blade_curvature);
+    }
+    if (enable_vignette) {
+        // Field-dependent pupil clip -> cat's-eye + mechanical vignette darkening
+        // + automatic stop-down recovery. Reject (valid=0), never renormalize.
+        if (co_pupil_catseye_valid(pupil, set(x, y), fstop, focal,
+                                   vignette_rv, vignette_k, image_circle) == 0) {
+            valid = 0;
+        }
+    }
+
+    // ── Thin-lens origin at the (reshaped) pupil sample ─────────
+    P = set(pupil.x, pupil.y, 0.0);
     if (enable_pupil_offset) {
         // Pupil sits toward the scene: negative Z in RHS camera space.
         P.z = -entrance_pupil_offset;
