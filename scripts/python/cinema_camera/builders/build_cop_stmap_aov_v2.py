@@ -2,16 +2,21 @@
 Cinema Camera Rig v3.0 -- Copernicus 2.0 STMap AOV HDA Builder
 
 Creates cinema::stmap_aov::3.0 in the cop (Copernicus 2.0) category.
-
 Generates a Nuke/Flame-ready STMap encoding lens distortion.
 
-MVP implementation: pythonsnippet that fills R/G with normalized UV
-coordinates after applying the distortion model in pure Python.
+SUPERSEDED / DO NOT WIRE. This Copernicus preview reimplements the distortion
+math in a pure-Python per-pixel snippet (_STMAP_PYTHON) that DIVERGED from the
+render: it centered each axis independently (no aspect/dn normalization) and
+used the old forward Brown-Conrady, so a plate undistorted with it would not
+re-register on the Karma render. The authoritative, dn-consistent ST-map is
+now the cop2 builder (build_cop_stmap_aov.py -> cinema::cop_stmap_aov), which
+calls the SHARED co_stmap_pixel from libcinema_optics.h -- byte-identical to
+karma_cinema_lens.vfl. That is the node wired into the orchestrator.
 
-The legacy cop2 version used a VEX snippet with libcinema_optics.h includes.
-For Copernicus 2.0 MVP we ported the distortion math to Python (no
-external include needed). When we add the vopnet+snippet path later,
-we'll switch back to GPU VEX with the .h include for performance.
+To revive this as the Copernicus path, rebuild it as a VEX Copernicus node
+(vopnet + snippet) that #includes libcinema_optics.h and calls co_stmap_pixel
+/ co_stmap_pixel_anamorphic (the builder's original TODO) -- do NOT re-port the
+math to Python. The _STMAP_PYTHON below is retained only as the historical MVP.
 """
 
 from __future__ import annotations
