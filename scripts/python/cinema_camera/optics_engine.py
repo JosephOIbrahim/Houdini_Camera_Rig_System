@@ -12,6 +12,43 @@ import math
 from .protocols import CameraState, LensState, OpticalResult
 
 
+# Reference exposure anchor: a "normal" cinema setup renders exposure == 0,
+# so the log2 scalar reads as relative stops (T5.6 / 180deg / 24fps / ISO800).
+_EXPOSURE_REF_T = 5.6
+_EXPOSURE_REF_ANGLE_DEG = 180.0
+_EXPOSURE_REF_FPS = 24.0
+_EXPOSURE_REF_ISO = 800
+
+
+def compute_exposure_scalar(
+    t_stop: float,
+    shutter_angle_deg: float,
+    fps: float,
+    exposure_index: int,
+) -> float:
+    """
+    Scalar log2 value for UsdGeomCamera.exposure -- the one exposure control
+    Karma honors on both CPU and XPU.
+
+    Uses the T-stop (transmission-corrected) because this is the EXPOSURE
+    aperture; the geometric f-number is for depth of field only. Photometric
+    exposure H = t_shutter * (ISO/100) / T^2, with t_shutter = (angle/360)/fps.
+    Returned value is log2(H / H_ref), anchored so the reference setup = 0.
+    """
+    def _h(t: float, angle: float, f: float, iso: float) -> float:
+        if t <= 0 or f <= 0:
+            return 0.0
+        t_shutter = (angle / 360.0) / f
+        return t_shutter * (iso / 100.0) / (t * t)
+
+    h = _h(t_stop, shutter_angle_deg, fps, exposure_index)
+    h_ref = _h(_EXPOSURE_REF_T, _EXPOSURE_REF_ANGLE_DEG,
+               _EXPOSURE_REF_FPS, _EXPOSURE_REF_ISO)
+    if h <= 0 or h_ref <= 0:
+        return 0.0
+    return math.log2(h / h_ref)
+
+
 def compute_circle_of_confusion(sensor_diagonal_mm: float) -> float:
     """
     Standard circle of confusion for acceptable sharpness.
@@ -101,9 +138,13 @@ def compute_optics(
 
     breathing = lens_state.breathing_shift_pct
 
+    # Horizontal FOV widens by the nominal anamorphic squeeze (a 2x front
+    # anamorphic captures ~2x the horizontal angle); vertical stays spherical.
+    # Spherical lenses (squeeze_ratio 1.0) are unaffected.
+    squeeze = lens_state.spec.squeeze_ratio
     hfov = compute_fov(
         lens_state.spec.focal_length_mm,
-        camera_state.active_width_mm,
+        camera_state.active_width_mm * squeeze,
         breathing,
     )
     vfov = compute_fov(
@@ -112,15 +153,16 @@ def compute_optics(
         breathing,
     )
 
+    # Depth of field is geometric: driven by the f-number, not the T-stop.
     hyperfocal = compute_hyperfocal(
         lens_state.spec.focal_length_mm,
-        lens_state.t_stop,
+        lens_state.f_number,
         coc_mm,
     )
 
     dof_near, dof_far = compute_dof(
         lens_state.spec.focal_length_mm,
-        lens_state.t_stop,
+        lens_state.f_number,
         lens_state.focus_distance_m,
         coc_mm,
     )

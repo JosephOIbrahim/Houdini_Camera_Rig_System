@@ -34,6 +34,14 @@ from typing import Any, Optional
 ENTRANCE_PUPIL_Z_SIGN = -1.0
 
 
+# Default lens transmission (tau) used to derive a geometric f-number from a
+# published T-stop when the lens spec carries no measured transmission.
+# HEURISTIC: typical cine glass tau ~ 0.80-0.90. The geometric f-number
+# (N = T * sqrt(tau)) is the correct aperture for DEPTH OF FIELD / bokeh;
+# the T-stop remains correct for EXPOSURE. See LensState.f_number.
+DEFAULT_TRANSMISSION = 0.85
+
+
 # ════════════════════════════════════════════════════════════
 # v3.0 FOUNDATION TYPES
 # ════════════════════════════════════════════════════════════
@@ -114,15 +122,30 @@ class SensorSpec:
 
 @dataclass(frozen=True)
 class FormatSpec:
-    """Recording format / resolution."""
+    """
+    Recording format / resolution.
+
+    active_width_mm / active_height_mm are the physical sensor SUB-REGION the
+    format reads (0.0 = open gate, i.e. use the full SensorSpec dimensions).
+    Stored EXPLICITLY, not derived from width_px * pixel_pitch: window modes
+    shrink at native pitch while downsample modes keep the full width at a
+    reduced resolution, and the two cannot be told apart from resolution alone.
+    """
     width_px: int
     height_px: int
     name: str = ""
+    active_width_mm: float = 0.0
+    active_height_mm: float = 0.0
 
     def __post_init__(self):
         if self.width_px <= 0 or self.height_px <= 0:
             raise ValueError(
                 f"Invalid resolution: {self.width_px}x{self.height_px}"
+            )
+        if self.active_width_mm < 0 or self.active_height_mm < 0:
+            raise ValueError(
+                f"Invalid active area: "
+                f"{self.active_width_mm}x{self.active_height_mm}mm"
             )
 
     @property
@@ -142,27 +165,46 @@ class CameraState:
     exposure_index: int = 800
     shutter_angle_deg: float = 180.0
     white_balance_k: int = 5600
+    fps: float = 24.0
 
     def __post_init__(self):
         if self.exposure_index <= 0:
             raise ValueError(f"Invalid exposure index: {self.exposure_index}")
         if not (0 < self.shutter_angle_deg <= 360):
             raise ValueError(f"Invalid shutter angle: {self.shutter_angle_deg}")
+        if self.fps <= 0:
+            raise ValueError(f"Invalid fps: {self.fps}")
+        # Photosite-ceiling guard: recorded rows/cols cannot exceed the physical
+        # photosites in the active sensor region. Fires only when both the pixel
+        # pitch and the format's active area are known. Catches fabricated specs
+        # (e.g. a resolution taller than the sensor can physically resolve).
+        pitch = self.sensor.pixel_pitch_um
+        aw, ah = self.format.active_width_mm, self.format.active_height_mm
+        if pitch > 0 and aw > 0 and self.format.width_px > (aw * 1000.0 / pitch) * 1.02:
+            raise ValueError(
+                f"{self.format.name or 'format'}: {self.format.width_px}px exceeds "
+                f"photosites in {aw}mm active width @ {pitch}um pitch"
+            )
+        if pitch > 0 and ah > 0 and self.format.height_px > (ah * 1000.0 / pitch) * 1.02:
+            raise ValueError(
+                f"{self.format.name or 'format'}: {self.format.height_px}px exceeds "
+                f"photosites in {ah}mm active height @ {pitch}um pitch"
+            )
 
     @property
     def active_width_mm(self) -> float:
-        """Active sensor width used for the current format."""
-        return self.sensor.width_mm
+        """Active sensor width for the current format (falls back to open gate)."""
+        return self.format.active_width_mm or self.sensor.width_mm
 
     @property
     def active_height_mm(self) -> float:
-        """Active sensor height used for the current format."""
-        return self.sensor.height_mm
+        """Active sensor height for the current format (falls back to open gate)."""
+        return self.format.active_height_mm or self.sensor.height_mm
 
     @property
     def shutter_speed_s(self) -> float:
-        """Shutter speed in seconds at 24fps."""
-        return self.shutter_angle_deg / (360.0 * 24.0)
+        """Exposure time in seconds: (shutter_angle / 360) / fps."""
+        return self.shutter_angle_deg / (360.0 * self.fps)
 
     def to_usd_dict(self) -> dict[str, tuple[str, Any]]:
         """Flat dictionary for USD attribute authoring."""
@@ -352,6 +394,7 @@ class LensSpec:
     breathing: BreathingCurve
     lateral_ca_px_per_mm: float = 0.0
     longitudinal_ca_stops: float = 0.0
+    transmission: float = 0.0     # Measured tau; 0 = unknown -> DEFAULT_TRANSMISSION
 
     # -- v3.0 physical fields (now superseded by MechanicalSpec) --
     weight_kg: float = 0.0
@@ -419,6 +462,16 @@ class LensState:
     @property
     def breathing_shift_pct(self) -> float:
         return self.spec.breathing.evaluate(self.focus_distance_m)
+
+    @property
+    def f_number(self) -> float:
+        """
+        Geometric f-number (focal / entrance-pupil diameter) for DEPTH OF FIELD
+        and bokeh size. Derived N = T * sqrt(tau); tau from the spec or the
+        heuristic DEFAULT_TRANSMISSION. Exposure uses the T-stop, not this.
+        """
+        tau = self.spec.transmission or DEFAULT_TRANSMISSION
+        return self.t_stop * math.sqrt(tau)
 
     @property
     def effective_squeeze(self) -> float:

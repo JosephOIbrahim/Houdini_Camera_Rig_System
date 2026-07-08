@@ -84,6 +84,7 @@ def resolve_states(hda):
         squeeze_uniformity=min(1.0, max(0.8, hda.evalParm("dist_sq_uniformity") or 1.0)),
     )
 
+    import hou
     body_id = hda.evalParm("body_id") or ""
     camera_state = CameraState(
         model=model_for(body_id) or body_id or "Custom",
@@ -98,6 +99,7 @@ def resolve_states(hda):
         ),
         exposure_index=hda.evalParm("exposure_index") or 800,
         shutter_angle_deg=hda.evalParm("shutter_angle_deg") or 180.0,
+        fps=hou.fps() or 24.0,
     )
 
     spec = None
@@ -151,14 +153,61 @@ def resolve_states(hda):
 # COOK-TIME AUTHORING ENTRY POINTS (one per Python Script LOP)
 # ════════════════════════════════════════════════════════════
 
+def _animated(parm) -> bool:
+    """True if the parm carries keyframes or is otherwise time-dependent."""
+    return bool(parm and (parm.keyframes() or parm.isTimeDependent()))
+
+
+def _author_camera_timesamples(hda, cam, lens_state) -> None:
+    """
+    Time-sample the animatable native camera attrs Karma reads per frame
+    (focusDistance, fStop, exposure) so a focus pull / stop change actually
+    animates the rendered DOF and brightness. The CVEX lens shader consumes
+    Karma's per-frame focus/fstop, so this drives the render on CPU and XPU.
+
+    No-op for static shots (neither focus nor T-stop animated) -- the default
+    values authored by build_usd_camera_rig stand.
+
+    NOTE: effective_squeeze (mumps) lives in the static lensshader opdef string
+    and is NOT animated here -- animated mumps is an in-shader (Tier 2) change.
+    """
+    import hou
+    from pxr import Usd
+
+    fp = hda.parm("focus_distance_m")
+    tp = hda.parm("t_stop")
+    ep = hda.parm("exposure_index")
+    sp = hda.parm("shutter_angle_deg")
+    # Any of the four exposure/DOF drivers animating warrants time samples.
+    if not any(_animated(p) for p in (fp, tp, ep, sp)):
+        return
+
+    spec = lens_state.spec
+    fstart, fend = (int(x) for x in hou.playbar.frameRange())
+    fps = hou.fps() or 24.0
+
+    for f in range(fstart, fend + 1):
+        tc = Usd.TimeCode(f)
+        focus = max(fp.evalAsFloatAtFrame(f), spec.close_focus_m)
+        tstop = min(max(tp.evalAsFloatAtFrame(f), spec.t_stop_min), spec.t_stop_max)
+        ei = int(round(ep.evalAsFloatAtFrame(f))) if ep else 800   # ISO can ramp
+        angle = sp.evalAsFloatAtFrame(f) if sp else 180.0          # shutter can ramp
+        ls_f = LensState(spec=spec, t_stop=tstop, focus_distance_m=focus)
+        cam.GetFocusDistanceAttr().Set(focus * 100.0, tc)          # m -> cm
+        cam.GetFStopAttr().Set(ls_f.f_number, tc)                  # geometric f
+        cam.GetExposureAttr().Set(
+            optics_engine.compute_exposure_scalar(tstop, angle, fps, ei), tc)
+
+
 def author_camera_rig(script_node) -> None:
-    """Author the Xform hierarchy + camera + cinema:* attrs."""
+    """Author the Xform hierarchy + camera + cinema:* attrs, then time-sample
+    the animatable camera attrs (focus/stop/exposure) if the shot is animated."""
     hda = script_node.parent()
     stage = script_node.editableStage()
     camera_state, lens_state, _ = resolve_states(hda)
     optics = optics_engine.compute_optics(camera_state, lens_state)
 
-    usd_builder.build_usd_camera_rig(
+    cam = usd_builder.build_usd_camera_rig(
         stage,
         rig_path_from(hda),
         camera_state,
@@ -168,6 +217,7 @@ def author_camera_rig(script_node) -> None:
         entrance_pupil_offset_cm=(hda.evalParm("entrance_pupil_offset_mm") or 0.0) / 10.0,
         combined_weight_kg=hda.evalParm("combined_weight_kg") or None,
     )
+    _author_camera_timesamples(hda, cam, lens_state)
 
 
 def apply_biomechanics(script_node) -> None:

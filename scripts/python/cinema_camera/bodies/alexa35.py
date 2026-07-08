@@ -22,12 +22,12 @@ ALEXA35_SENSOR = SensorSpec(
     pixel_pitch_um=6.075,
 )
 
-# Common recording formats
+# Common recording formats (px + active sensor sub-region in mm; native pitch)
 ALEXA35_FORMATS = {
-    "4.6K 3:2 Open Gate": FormatSpec(4608, 3164, "4.6K 3:2 Open Gate"),
-    "4K 16:9":            FormatSpec(4096, 2304, "4K 16:9"),
-    "UHD":                FormatSpec(3840, 2160, "UHD"),
-    "2K 16:9":            FormatSpec(2048, 1152, "2K 16:9"),
+    "4.6K 3:2 Open Gate": FormatSpec(4608, 3164, "4.6K 3:2 Open Gate", 27.99, 19.22),
+    "4K 16:9":            FormatSpec(4096, 2304, "4K 16:9", 24.88, 14.00),
+    "UHD":                FormatSpec(3840, 2160, "UHD", 23.33, 13.12),
+    "2K 16:9":            FormatSpec(2048, 1152, "2K 16:9", 12.44, 7.00),
 }
 
 # Camera body weight (no accessories)

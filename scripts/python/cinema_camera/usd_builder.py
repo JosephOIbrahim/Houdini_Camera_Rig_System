@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdRender
 
+from . import optics_engine
 from .protocols import ENTRANCE_PUPIL_Z_SIGN, CameraState, LensState, OpticalResult
 from .presets import DEFAULT_MOUNT_OFFSET_CM, MOUNT_OFFSETS_CM, mount_offset_for
 
@@ -120,15 +121,27 @@ def build_usd_camera_rig(
     camera.CreateVerticalApertureAttr().Set(camera_state.active_height_mm)
     camera.CreateFocalLengthAttr().Set(lens_state.spec.focal_length_mm)
     camera.CreateFocusDistanceAttr().Set(lens_state.focus_distance_m * 100.0)
-    camera.CreateFStopAttr().Set(lens_state.t_stop)
+    # fStop drives DoF/bokeh -> geometric f-number (T-stop is for exposure).
+    camera.CreateFStopAttr().Set(lens_state.f_number)
     camera.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 100000.0))
 
-    # USD shutter:open/close are fractional frames around the sample time.
-    # shutter_open = 0 (sample start), shutter_close = angle/360.
-    camera.CreateShutterOpenAttr().Set(0.0)
-    camera.CreateShutterCloseAttr().Set(
-        float(camera_state.shutter_angle_deg / 360.0)
+    # Physical exposure: the scalar log2 attr Karma honors (CPU + XPU),
+    # metered from T-stop / shutter angle / fps / EI.
+    camera.CreateExposureAttr().Set(
+        optics_engine.compute_exposure_scalar(
+            lens_state.t_stop,
+            camera_state.shutter_angle_deg,
+            camera_state.fps,
+            camera_state.exposure_index,
+        )
     )
+
+    # USD shutter:open/close are fractional frames around the sample time.
+    # Physically centered on the frame: open = -angle/720, close = +angle/720
+    # (interval width angle/360, so blur magnitude is unchanged, not forward-biased).
+    _half_shutter = float(camera_state.shutter_angle_deg / 720.0)
+    camera.CreateShutterOpenAttr().Set(-_half_shutter)
+    camera.CreateShutterCloseAttr().Set(_half_shutter)
 
     # Cinema rig custom attributes
     sensor_prim = camera.GetPrim()
@@ -184,7 +197,7 @@ def build_usd_camera(
     camera.CreateVerticalApertureAttr().Set(camera_state.active_height_mm)
     camera.CreateFocalLengthAttr().Set(lens_state.spec.focal_length_mm)
     camera.CreateFocusDistanceAttr().Set(lens_state.focus_distance_m * 100.0)
-    camera.CreateFStopAttr().Set(lens_state.t_stop)
+    camera.CreateFStopAttr().Set(lens_state.f_number)  # geometric f-number (DoF)
     camera.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 100000.0))
 
     prim = camera.GetPrim()
