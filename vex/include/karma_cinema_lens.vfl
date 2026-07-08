@@ -151,7 +151,10 @@ cinema_lens_shader(
     if (enable_vignette) {
         // Field-dependent pupil clip -> cat's-eye + mechanical vignette darkening
         // + automatic stop-down recovery. Reject (valid=0), never renormalize.
-        if (co_pupil_catseye_valid(pupil, set(x, y), fstop, focal,
+        // Clip the RAW round stop disc (dofx,dofy), NOT the iris-reshaped pupil:
+        // the vesica is the clean stop-disc INTERSECT occluder-disc (matches the
+        // verified transmission); the iris polygon is a separate shape stage.
+        if (co_pupil_catseye_valid(set(dofx, dofy), set(x, y), fstop, focal,
                                    vignette_rv, vignette_k, image_circle) == 0) {
             valid = 0;
         }

@@ -399,7 +399,8 @@ co_pupil_catseye_valid(vector2 dof; vector2 field; float fstop; float focal;
     if (rho > image_circle) return 0;
     float r_ap = (fstop > 0.0) ? focal / (2.0 * fstop) : focal * 0.5;
     vector2 pd = dof * r_ap;                              // physical pupil sample
-    vector2 c  = set(k_rel * focal * field.x, k_rel * focal * field.y);
+    // -k*(x,y): flat side toward the corner -> physical cat's-eye orientation.
+    vector2 c  = set(-k_rel * focal * field.x, -k_rel * focal * field.y);
     float rv = rv_rel * focal;
     return (length(pd - c) <= rv) ? 1 : 0;
 }

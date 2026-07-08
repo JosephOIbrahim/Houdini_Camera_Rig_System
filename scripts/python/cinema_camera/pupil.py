@@ -87,7 +87,9 @@ def cats_eye_valid(dx: float, dy: float, x: float, y: float,
         return False                                  # outside image circle
     r_ap = focal / (2.0 * fstop) if fstop > 0 else focal * 0.5
     px, py = dx * r_ap, dy * r_ap                     # physical pupil sample
-    cx, cy = k_rel * focal * x, k_rel * focal * y     # occlusion center = k*focal*(x,y)
+    # occlusion center = -k*focal*(x,y): the minus puts the clipped/flat side on
+    # the OUTER (corner) side -> physically-correct cat's-eye orientation.
+    cx, cy = -k_rel * focal * x, -k_rel * focal * y
     rv = rv_rel * focal
     return math.hypot(px - cx, py - cy) <= rv
 
