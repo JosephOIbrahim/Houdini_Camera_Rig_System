@@ -163,3 +163,32 @@ def test_anamorphic_roundtrip():
         qx, qy = g_anamorphic(x, y, ACOEFFS)
         px, py = g_anamorphic_inverse(qx, qy, ACOEFFS)
         assert (px, py) == pytest.approx((x, y), abs=1e-7)
+
+
+# ── ST-map round-trip (mirrors libcinema_optics.h co_stmap_pixel) ──
+
+def _stmap_pixel(u, v, aspect, c, mode):
+    """Python mirror of the shared VEX co_stmap_pixel (pixel UV -> source UV)."""
+    e = math.sqrt(aspect * aspect + 1.0)
+    dnx = (u * 2.0 - 1.0) * aspect / e
+    dny = (v * 2.0 - 1.0) / e
+    gx, gy = (g(dnx, dny, c) if mode == 0 else g_inverse(dnx, dny, c))
+    return (gx * e / aspect * 0.5 + 0.5, gy * e * 0.5 + 0.5)
+
+
+def test_stmap_forward_backward_roundtrip_sub_half_pixel():
+    # Bake a redistort (gi) then an undistort (g) ST-map value; the composition
+    # must return the source pixel to well under 0.5px -- the correctness gate
+    # for "shoot in Karma, undistort/redistort in Nuke".
+    aspect = 16.0 / 9.0
+    res_x, res_y = 1920, 1080
+    c = DistortionCoeffs(c2=-0.06, c4=0.012, u2=0.002, v2=-0.0015)
+    max_px = 0.0
+    for iy in range(0, res_y, 60):
+        for ix in range(0, res_x, 120):
+            u = (ix + 0.5) / res_x
+            v = (iy + 0.5) / res_y
+            du, dv = _stmap_pixel(u, v, aspect, c, mode=1)   # clean -> distorted
+            ru, rv = _stmap_pixel(du, dv, aspect, c, mode=0)  # distorted -> clean
+            max_px = max(max_px, abs(ru - u) * res_x, abs(rv - v) * res_y)
+    assert max_px < 0.5

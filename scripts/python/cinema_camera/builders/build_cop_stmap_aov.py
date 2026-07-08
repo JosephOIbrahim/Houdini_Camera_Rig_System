@@ -17,51 +17,45 @@ from __future__ import annotations
 import os
 
 
-# VEX: STMap generator using libcinema_optics.h
+# VEX: STMap generator. Calls the SHARED co_stmap_pixel from
+# libcinema_optics.h -- the same dn-normalized 3DE math the Karma lens shader
+# (karma_cinema_lens.vfl) applies -- so the bake and the render are byte-
+# identical (no render-vs-bake drift). mode 0 = forward g (co_undistort_g),
+# mode 1 = inverse gi (co_redistort_gi, analytic-Jacobian Newton).
 _STMAP_VEX = '''
 #include <libcinema_optics.h>
 
 float res_x = ch("../../resolution_x");
 float res_y = ch("../../resolution_y");
+float aspect = (res_y > 0.0) ? res_x / res_y : 1.0;
 
-// Normalized UV (0-1)
-float u = (float(X) + 0.5) / res_x;
-float v = (float(Y) + 0.5) / res_y;
-
-// Center to -1..1 range for distortion math
-float cx = u * 2.0 - 1.0;
-float cy = v * 2.0 - 1.0;
-
-// Build distortion coefficients from parameters
-CO_DistortionCoeffs coeffs;
-coeffs.k1 = ch("../../dist_k1");
-coeffs.k2 = ch("../../dist_k2");
-coeffs.k3 = ch("../../dist_k3");
-coeffs.p1 = ch("../../dist_p1");
-coeffs.p2 = ch("../../dist_p2");
-coeffs.squeeze_uniformity = ch("../../dist_sq_uniformity");
-
-vector2 uv_in = set(cx, cy);
-vector2 uv_out;
+// pixel-center UV [0,1]
+vector2 uv01 = set((float(X) + 0.5) / res_x, (float(Y) + 0.5) / res_y);
 
 int mode = chi("../../mode");
 float squeeze = ch("../../effective_squeeze");
+vector2 uv_out;
 
-if (mode == 0) {
-    // Undistort: map distorted coords to clean coords
-    if (squeeze > 1.01) {
-        uv_out = co_apply_anamorphic_distortion(uv_in, coeffs, squeeze);
-    } else {
-        uv_out = co_apply_distortion(uv_in, coeffs);
-    }
+if (squeeze > 1.01) {
+    // Anamorphic: radial-equivalent seeded from k1,k2 (matches the lens shader;
+    // measured cos2phi coefficients replace these when lens-grid data exists).
+    CO_AnamorphicCoeffs ac;
+    ac.cx02 = ch("../../dist_k1"); ac.cy02 = ch("../../dist_k1");
+    ac.cx04 = ch("../../dist_k2"); ac.cy04 = ch("../../dist_k2");
+    uv_out = co_stmap_pixel_anamorphic(uv01, aspect, ac, mode);
 } else {
-    // Redistort: map clean coords to distorted coords (Newton-Raphson)
-    uv_out = co_undistort(uv_in, coeffs);
+    CO_DistortionCoeffs coeffs;
+    coeffs.k1 = ch("../../dist_k1");
+    coeffs.k2 = ch("../../dist_k2");
+    coeffs.k3 = ch("../../dist_k3");
+    coeffs.p1 = ch("../../dist_p1");
+    coeffs.p2 = ch("../../dist_p2");
+    coeffs.squeeze_uniformity = ch("../../dist_sq_uniformity");
+    uv_out = co_stmap_pixel(uv01, aspect, coeffs, mode);
 }
 
-// Back to 0-1 range
-R = uv_out.x * 0.5 + 0.5;
-G = uv_out.y * 0.5 + 0.5;
+R = uv_out.x;
+G = uv_out.y;
 B = 0.0;
 '''
 

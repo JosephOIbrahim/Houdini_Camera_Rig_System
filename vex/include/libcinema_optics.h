@@ -352,4 +352,40 @@ co_anamorphic_redistort_gi(
 }
 
 
+// ════════════════════════════════════════════════════════════
+// ST-MAP SAMPLING (shared by the render inverse + the COP bake)
+// ════════════════════════════════════════════════════════════
+//
+// The single source of truth for the Nuke/Flame ST-map. Uses the SAME
+// square-NDC -> dn normalization as karma_cinema_lens.vfl, so the ST-map bake
+// and the rendered distortion are byte-identical (no render-vs-bake drift).
+//
+//   pixel UV in [0,1]  ->  square NDC [-1,1]  ->  dn  ->  g / gi  ->  UV [0,1]
+//   aspect = image aspect (xres/yres). mode 0 = g (co_undistort_g / forward),
+//   mode 1 = gi (co_redistort_gi / inverse). g . gi == identity, so a forward
+//   bake fed through a backward bake returns to the source pixel (round-trip).
+
+vector2
+co_stmap_pixel(vector2 uv01; float aspect; CO_DistortionCoeffs c; int mode)
+{
+    float e = sqrt(aspect*aspect + 1.0);
+    vector2 dn = set((uv01.x*2.0 - 1.0) * aspect / e, (uv01.y*2.0 - 1.0) / e);
+    dn = (mode == 0) ? co_undistort_g(dn, c) : co_redistort_gi(dn, c, 10);
+    float nx = dn.x * e / aspect;
+    float ny = dn.y * e;
+    return set(nx*0.5 + 0.5, ny*0.5 + 0.5);
+}
+
+vector2
+co_stmap_pixel_anamorphic(vector2 uv01; float aspect; CO_AnamorphicCoeffs c; int mode)
+{
+    float e = sqrt(aspect*aspect + 1.0);
+    vector2 dn = set((uv01.x*2.0 - 1.0) * aspect / e, (uv01.y*2.0 - 1.0) / e);
+    dn = (mode == 0) ? co_anamorphic_undistort_g(dn, c) : co_anamorphic_redistort_gi(dn, c, 12);
+    float nx = dn.x * e / aspect;
+    float ny = dn.y * e;
+    return set(nx*0.5 + 0.5, ny*0.5 + 0.5);
+}
+
+
 #endif // __LIBCINEMA_OPTICS_H__
